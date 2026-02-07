@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Platform } from "react-native";
+import authService from "./authService";
 
 const API_BASE_URL =
   "https://gloomily-meritorious-giuseppe.ngrok-free.dev/api/v1";
@@ -12,6 +13,15 @@ const api = axios.create({
     "ngrok-skip-browser-warning": "true",
   },
   timeout: 60000,
+});
+
+// Add auth token to all requests
+api.interceptors.request.use(async (config) => {
+  const token = await authService.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export interface PredictionResult {
@@ -85,6 +95,15 @@ class ApiService {
     try {
       console.log("🔄 Starting image upload...");
 
+      // Get auth token
+      const token = await authService.getToken();
+      if (!token) {
+        return {
+          success: false,
+          message: "Not authenticated. Please sign in.",
+        };
+      }
+
       // 1. Android URI Fix: Ensure it starts with file://
       let cleanUri = imageUri;
       if (
@@ -121,6 +140,7 @@ class ApiService {
         method: "POST",
         headers: {
           Accept: "application/json",
+          Authorization: `Bearer ${token}`,
           "ngrok-skip-browser-warning": "true",
         },
         body: formData,
@@ -227,12 +247,28 @@ class ApiService {
   /**
    * Get recent results
    */
-  async getRecentResults(limit: number = 10) {
+  async getRecentResults(limit: number = 10): Promise<{
+    success: boolean;
+    data?: Array<{
+      id: number;
+      scan_id: string;
+      image_url: string;
+      breed: string;
+      confidence: number;
+      created_at: string;
+      status?: "pending" | "verified";
+    }>;
+    message?: string;
+  }> {
     try {
       const response = await api.get(`/results?limit=${limit}`);
       return response.data;
     } catch (error: any) {
-      throw error;
+      console.error("Fetch Recent Results Error:", error);
+      return {
+        success: false,
+        message: "Failed to fetch scan history",
+      };
     }
   }
 }

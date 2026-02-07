@@ -1,12 +1,18 @@
 import ApiService from "@/services/api";
+import authService, { User } from "@/services/authService";
+import notificationService, {
+  Notification,
+} from "@/services/notificationservice";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
+  FlatList,
   Image,
   Modal,
   SafeAreaView,
@@ -38,7 +44,223 @@ interface AnalysisStage {
 }
 
 // ============================================================================
-// LOADING MODAL COMPONENT (Integrated)
+// NOTIFICATION MODAL COMPONENT
+// ============================================================================
+const NotificationModal: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  notifications: Notification[];
+  onRefresh: () => void;
+  onMarkAsRead: (id: number) => void;
+  onMarkAllAsRead: () => void;
+  onDelete: (id: number) => void;
+  onNotificationPress: (notification: Notification) => void;
+}> = ({
+  visible,
+  onClose,
+  notifications,
+  onRefresh,
+  onMarkAsRead,
+  onMarkAllAsRead,
+  onDelete,
+  onNotificationPress,
+}) => {
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={notificationStyles.overlay}>
+        <View style={notificationStyles.container}>
+          {/* Header */}
+          <View style={notificationStyles.header}>
+            <Text style={notificationStyles.headerTitle}>Notifications</Text>
+            <View style={notificationStyles.headerActions}>
+              {notifications.length > 0 && (
+                <TouchableOpacity onPress={onMarkAllAsRead}>
+                  <Text style={notificationStyles.markAllText}>
+                    Mark all read
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={onClose}>
+                <Feather name="x" size={24} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Notification List */}
+          <FlatList
+            data={notifications}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  notificationStyles.notificationCard,
+                  !item.read && notificationStyles.unreadCard,
+                ]}
+                onPress={() => onNotificationPress(item)}
+              >
+                <View style={notificationStyles.notificationIcon}>
+                  <Feather
+                    name={
+                      item.type === "scan_verified" ? "check-circle" : "bell"
+                    }
+                    size={24}
+                    color="#3b82f6"
+                  />
+                  {!item.read && <View style={notificationStyles.unreadDot} />}
+                </View>
+
+                <View style={notificationStyles.notificationContent}>
+                  <Text style={notificationStyles.notificationTitle}>
+                    {item.title}
+                  </Text>
+                  <Text style={notificationStyles.notificationMessage}>
+                    {item.message}
+                  </Text>
+                  <Text style={notificationStyles.notificationTime}>
+                    {new Date(item.created_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={notificationStyles.deleteButton}
+                  onPress={() => onDelete(item.id)}
+                >
+                  <Feather name="trash-2" size={18} color="#ef4444" />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View style={notificationStyles.emptyState}>
+                <Feather name="bell-off" size={48} color="#6b7280" />
+                <Text style={notificationStyles.emptyTitle}>
+                  No notifications
+                </Text>
+                <Text style={notificationStyles.emptySubtitle}>
+                  You're all caught up!
+                </Text>
+              </View>
+            }
+            contentContainerStyle={notificationStyles.listContent}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const notificationStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  container: {
+    backgroundColor: "#1a1a1a",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: height * 0.8,
+    paddingBottom: 20,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a2a",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  markAllText: {
+    color: "#3b82f6",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  listContent: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  notificationCard: {
+    flexDirection: "row",
+    backgroundColor: "#0f0f0f",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  unreadCard: {
+    backgroundColor: "#0a1628",
+    borderColor: "#1e40af",
+  },
+  notificationIcon: {
+    position: "relative",
+    marginRight: 12,
+  },
+  unreadDot: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  notificationMessage: {
+    fontSize: 14,
+    color: "#9ca3af",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  notificationTime: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  deleteButton: {
+    padding: 8,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ffffff",
+    marginTop: 16,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#9ca3af",
+    marginTop: 8,
+  },
+});
+
+// ============================================================================
+// LOADING MODAL COMPONENT
 // ============================================================================
 const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
@@ -77,7 +299,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
 
   const totalDuration = stages.reduce((sum, stage) => sum + stage.duration, 0);
 
-  // Spin animation
   useEffect(() => {
     const spin = Animated.loop(
       Animated.timing(spinAnim, {
@@ -95,7 +316,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
     outputRange: ["0deg", "360deg"],
   });
 
-  // Progress tracking
   useEffect(() => {
     if (!visible) {
       setCurrentStageIndex(0);
@@ -152,7 +372,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
     >
       <View style={loadingStyles.overlay}>
         <View style={loadingStyles.container}>
-          {/* Header */}
           <View style={loadingStyles.header}>
             <View style={loadingStyles.headerContent}>
               <View style={loadingStyles.iconCircle}>
@@ -167,9 +386,7 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
             </View>
           </View>
 
-          {/* Content */}
           <View style={loadingStyles.content}>
-            {/* Current Stage Card */}
             <View style={loadingStyles.currentStageCard}>
               <View style={loadingStyles.stageIconContainer}>
                 <View style={loadingStyles.pulseRing}>
@@ -204,7 +421,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
               </View>
             </View>
 
-            {/* Progress Bar */}
             <View style={loadingStyles.progressSection}>
               <View style={loadingStyles.progressBar}>
                 <Animated.View
@@ -213,7 +429,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
               </View>
             </View>
 
-            {/* Steps List */}
             <View style={loadingStyles.stepsList}>
               <Text style={loadingStyles.stepsTitle}>PROGRESS STEPS</Text>
               {stages.map((stage, index) => {
@@ -259,7 +474,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
               })}
             </View>
 
-            {/* Footer */}
             <View style={loadingStyles.footer}>
               <Feather name="clock" size={14} color="#f59e0b" />
               <Text style={loadingStyles.footerText}>
@@ -282,6 +496,112 @@ function ScanPage() {
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Notification states
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  // Fetch user data and notifications on mount
+  useEffect(() => {
+    const fetchUserAndNotifications = async () => {
+      try {
+        const currentUser = await authService.getCurrentUser();
+        setUser(currentUser);
+        await fetchNotifications();
+        await fetchUnreadCount();
+      } catch (err) {
+        console.error("Failed to fetch user:", err);
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+
+    fetchUserAndNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    setLoadingNotifications(true);
+    try {
+      const response = await notificationService.getNotifications();
+      if (response.success && response.notifications) {
+        setNotifications(response.notifications.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  const fetchUnreadCount = async () => {
+    try {
+      const response = await notificationService.getUnreadCount();
+      if (response.success && response.count !== undefined) {
+        setUnreadCount(response.count);
+      }
+    } catch (error) {
+      console.error("Failed to fetch unread count:", error);
+    }
+  };
+
+  const handleNotificationPress = async (notification: Notification) => {
+    // Mark as read
+    if (!notification.read) {
+      await handleMarkAsRead(notification.id);
+    }
+
+    // Navigate to scan result if available
+    if (notification.data?.scan_id) {
+      setShowNotifications(false);
+      router.push({
+        pathname: "/scan-result",
+        params: { scan_id: notification.data.scan_id },
+      });
+    }
+  };
+
+  const handleMarkAsRead = async (notificationId: number) => {
+    const response = await notificationService.markAsRead(notificationId);
+    if (response.success) {
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notificationId
+            ? { ...n, read: true, read_at: new Date().toISOString() }
+            : n,
+        ),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    const response = await notificationService.markAllAsRead();
+    if (response.success) {
+      setNotifications((prev) =>
+        prev.map((n) => ({
+          ...n,
+          read: true,
+          read_at: new Date().toISOString(),
+        })),
+      );
+      setUnreadCount(0);
+    }
+  };
+
+  const handleDeleteNotification = async (notificationId: number) => {
+    const response =
+      await notificationService.deleteNotification(notificationId);
+    if (response.success) {
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+      await fetchUnreadCount();
+    }
+  };
 
   const requestCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -292,6 +612,11 @@ function ScanPage() {
     return true;
   };
 
+  const getFirstName = (fullName: string | undefined) => {
+    if (!fullName) return "User";
+    return fullName.split(" ")[0];
+  };
+
   const requestMediaLibraryPermission = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -299,6 +624,16 @@ function ScanPage() {
       return false;
     }
     return true;
+  };
+
+  const handleLogout = async () => {
+    setShowUserMenu(false);
+    try {
+      await authService.logout();
+      router.replace("/");
+    } catch (error) {
+      Alert.alert("Error", "Failed to logout. Please try again.");
+    }
   };
 
   const handleTakePhoto = async () => {
@@ -352,7 +687,6 @@ function ScanPage() {
       if (response.success && response.data) {
         console.log("Scan successful:", response.data.scan_id);
 
-        // Clear the inputs explicitly before navigating
         setImageUri(null);
         setResult(null);
         setError(null);
@@ -363,7 +697,6 @@ function ScanPage() {
           params: { scan_id: response.data.scan_id },
         });
       } else {
-        // Extract the REAL error message
         let displayMessage = response.message || "Analysis failed";
 
         if (response.errors) {
@@ -391,134 +724,242 @@ function ScanPage() {
     setError(null);
   };
 
+  const handleScanHistory = () => {
+    router.push("/scan-history");
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Loading Modal */}
+    <View style={styles.container}>
       <AnalysisLoadingModal visible={processing} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTextContainer}>
+      <NotificationModal
+        visible={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        notifications={notifications}
+        onRefresh={fetchNotifications}
+        onMarkAsRead={handleMarkAsRead}
+        onMarkAllAsRead={handleMarkAllAsRead}
+        onDelete={handleDeleteNotification}
+        onNotificationPress={handleNotificationPress}
+      />
+
+      {/* USER HEADER - COLORED BACKGROUND */}
+      <View style={styles.userHeader}>
+        <SafeAreaView style={styles.userHeaderSafe}>
+          <View style={styles.userHeaderContent}>
+            {/* Left: Logo + Name */}
+            <View style={styles.userInfoSection}>
+              {loadingUser ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <>
+                  <View style={styles.userInfoSection}>
+                    <TouchableOpacity
+                      onPress={() => setShowUserMenu(!showUserMenu)}
+                      activeOpacity={0.7}
+                      style={styles.userTouchable}
+                    >
+                      <View style={styles.logoContainer}>
+                        {user?.avatar ? (
+                          <Image
+                            source={{ uri: user.avatar }}
+                            style={styles.avatar}
+                          />
+                        ) : (
+                          <View style={styles.defaultAvatar}>
+                            <Feather name="user" size={20} color="#60a5fa" />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.userTextContainer}>
+                        <Text style={styles.greetingText}>Welcome,</Text>
+                        <Text style={styles.userName}>
+                          {getFirstName(user?.name)}
+                        </Text>
+                      </View>
+
+                      <Feather
+                        name={showUserMenu ? "chevron-up" : "chevron-down"}
+                        size={16}
+                        color="#ffffff"
+                      />
+                    </TouchableOpacity>
+
+                    {/* Dropdown Menu */}
+                    {showUserMenu && (
+                      <View style={styles.userDropdown}>
+                        <View style={styles.dropdownUserInfo}>
+                          <Text style={styles.dropdownUserName}>
+                            {user?.name || "User"}
+                          </Text>
+                          <Text style={styles.dropdownUserEmail}>
+                            {user?.email || ""}
+                          </Text>
+                        </View>
+
+                        <View style={styles.dropdownDivider} />
+
+                        <TouchableOpacity
+                          style={styles.dropdownItem}
+                          onPress={handleLogout}
+                        >
+                          <Feather name="log-out" size={18} color="#ef4444" />
+                          <Text style={styles.logoutText}>Logout</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+
+            {/* Right: Notification Bell + History Button */}
+            <View style={styles.headerButtons}>
+              <TouchableOpacity
+                style={styles.notificationButton}
+                onPress={() => setShowNotifications(true)}
+                activeOpacity={0.7}
+              >
+                <Feather name="bell" size={20} color="#ffffff" />
+                {unreadCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.historyButton}
+                onPress={handleScanHistory}
+                activeOpacity={0.7}
+              >
+                <Feather name="clock" size={20} color="#ffffff" />
+                <Text style={styles.historyButtonText}>History</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </View>
+
+      {/* MAIN CONTENT CONTAINER - ROUNDED TOP */}
+      <View style={styles.mainContentContainer}>
+        {/* Header Text */}
+        <View style={styles.header}>
           <Text style={styles.title}>Scan Your Pet</Text>
           <Text style={styles.subtitle}>
             Upload a photo or use your camera to identify your pet's breed.
           </Text>
         </View>
-      </View>
 
-      {/* Main Content */}
-      <View style={styles.content}>
-        {!imageUri ? (
-          /* Initial Upload Section */
-          <>
-            {/* Upload Card */}
-            <View style={styles.uploadCard}>
-              <View style={styles.uploadIconContainer}>
-                <View style={styles.iconCircle}>
-                  <Feather name="camera" size={40} color="#60a5fa" />
+        {/* Scrollable Content */}
+        <View style={styles.content}>
+          {!imageUri ? (
+            <>
+              <View style={styles.uploadCard}>
+                <View style={styles.uploadIconContainer}>
+                  <View style={styles.iconCircle}>
+                    <Feather name="camera" size={40} color="#60a5fa" />
+                  </View>
+                </View>
+                <Text style={styles.uploadText}>Select an image</Text>
+              </View>
+
+              <View style={styles.actionButtonsContainer}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleTakePhoto}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="camera" size={18} color="#ffffff" />
+                  <Text style={styles.primaryButtonText}>Take Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handlePickImage}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="image" size={18} color="#ffffff" />
+                  <Text style={styles.primaryButtonText}>Choose Image</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.tipsCard}>
+                <View style={styles.tipsHeader}>
+                  <Feather name="info" size={18} color="#60a5fa" />
+                  <Text style={styles.tipsTitle}>Tips for Best Results</Text>
+                </View>
+                <View style={styles.tipsList}>
+                  <View style={styles.tipItem}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.tipText}>
+                      Ensure your pet is clearly visible
+                    </Text>
+                  </View>
+                  <View style={styles.tipItem}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.tipText}>Use good lighting</Text>
+                  </View>
+                  <View style={styles.tipItem}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.tipText}>
+                      Center your pet in the frame
+                    </Text>
+                  </View>
+                  <View style={styles.tipItem}>
+                    <Text style={styles.bullet}>•</Text>
+                    <Text style={styles.tipText}>
+                      Better angles improve accuracy
+                    </Text>
+                  </View>
                 </View>
               </View>
-              <Text style={styles.uploadText}>Select an image</Text>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtonsContainer}>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleTakePhoto}
-                activeOpacity={0.8}
-              >
-                <Feather name="camera" size={18} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Take Photo</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handlePickImage}
-                activeOpacity={0.8}
-              >
-                <Feather name="image" size={18} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>Choose Image</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Tips Card */}
-            <View style={styles.tipsCard}>
-              <View style={styles.tipsHeader}>
-                <Feather name="info" size={18} color="#60a5fa" />
-                <Text style={styles.tipsTitle}>Tips for Best Results</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.previewCard}>
+                <Image source={{ uri: imageUri }} style={styles.previewImage} />
               </View>
-              <View style={styles.tipsList}>
-                <View style={styles.tipItem}>
-                  <Text style={styles.bullet}>•</Text>
-                  <Text style={styles.tipText}>
-                    Ensure your pet is clearly visible
-                  </Text>
-                </View>
-                <View style={styles.tipItem}>
-                  <Text style={styles.bullet}>•</Text>
-                  <Text style={styles.tipText}>Use good lighting</Text>
-                </View>
-                <View style={styles.tipItem}>
-                  <Text style={styles.bullet}>•</Text>
-                  <Text style={styles.tipText}>
-                    Center your pet in the frame
-                  </Text>
-                </View>
-                <View style={styles.tipItem}>
-                  <Text style={styles.bullet}>•</Text>
-                  <Text style={styles.tipText}>
-                    Better angles improve accuracy
-                  </Text>
-                </View>
+
+              <View style={styles.previewActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.analyzeButton,
+                    processing && styles.buttonDisabled,
+                  ]}
+                  onPress={handleAnalyze}
+                  disabled={processing}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="zap" size={20} color="#ffffff" />
+                  <Text style={styles.analyzeButtonText}>Analyze Image</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleReset}
+                  disabled={processing}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="refresh-cw" size={18} color="#9ca3af" />
+                  <Text style={styles.retakeButtonText}>Retake Photo</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          </>
-        ) : (
-          /* Image Preview Section */
-          <>
-            {/* Image Preview Card */}
-            <View style={styles.previewCard}>
-              <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            </View>
+            </>
+          )}
+        </View>
 
-            {/* Action Buttons for Preview */}
-            <View style={styles.previewActions}>
-              <TouchableOpacity
-                style={[
-                  styles.analyzeButton,
-                  processing && styles.buttonDisabled,
-                ]}
-                onPress={handleAnalyze}
-                disabled={processing}
-                activeOpacity={0.8}
-              >
-                <Feather name="zap" size={20} color="#ffffff" />
-                <Text style={styles.analyzeButtonText}>Analyze Image</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={handleReset}
-                disabled={processing}
-                activeOpacity={0.8}
-              >
-                <Feather name="refresh-cw" size={18} color="#9ca3af" />
-                <Text style={styles.retakeButtonText}>Retake Photo</Text>
-              </TouchableOpacity>
-            </View>
-          </>
+        {error && (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-circle" size={20} color="#ef4444" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         )}
       </View>
-
-      {/* Error Display */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Feather name="alert-circle" size={20} color="#ef4444" />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -610,6 +1051,7 @@ const loadingStyles = StyleSheet.create({
     backgroundColor: "#3b82f6",
     opacity: 0.2,
   },
+
   stageIcon: {
     width: 48,
     height: 48,
@@ -752,15 +1194,181 @@ const loadingStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f0f",
+    backgroundColor: "#1e3a8a",
   },
+
+  userHeader: {
+    backgroundColor: "#1e3a8a",
+    paddingBottom: 16,
+    marginTop: 35,
+  },
+  userDropdown: {
+    position: "absolute",
+    top: 65,
+    left: 0,
+    backgroundColor: "#1a1a1a",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    minWidth: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 2000,
+  },
+  dropdownUserInfo: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a2a",
+  },
+  dropdownUserName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  dropdownUserEmail: {
+    fontSize: 13,
+    color: "#9ca3af",
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+  },
+  logoutText: {
+    color: "#ef4444",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  userHeaderSafe: {
+    paddingTop: 8,
+  },
+  userHeaderContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  userInfoSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  logoContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  avatar: {
+    width: "100%",
+    height: "100%",
+  },
+  defaultAvatar: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(96, 165, 250, 0.2)",
+  },
+  userTextContainer: {
+    flex: 1,
+  },
+  greetingText: {
+    fontSize: 12,
+    color: "#93c5fd",
+    fontWeight: "500",
+  },
+  userName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginTop: 2,
+  },
+  userTouchable: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    maxWidth: "70%",
+  },
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  notificationButton: {
+    position: "relative",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  dropdownDivider: {
+    height: 1,
+    backgroundColor: "#2a2a2a",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#ef4444",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: "#1e3a8a",
+  },
+  notificationBadgeText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  historyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  historyButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  mainContentContainer: {
+    flex: 1,
+    backgroundColor: "#0f0f0f",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+    marginTop: -8,
+  },
+
   header: {
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 32,
     paddingBottom: 20,
-  },
-  headerTextContainer: {
-    gap: 6,
   },
   title: {
     fontSize: 23,
@@ -772,13 +1380,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#9ca3af",
     lineHeight: 20,
+    marginTop: 6,
   },
+
   content: {
     flex: 1,
     paddingHorizontal: 24,
     paddingBottom: 24,
     justifyContent: "space-between",
   },
+
   uploadCard: {
     flex: 1,
     backgroundColor: "#1a1a1a",
@@ -808,6 +1419,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#d1d5db",
   },
+
   actionButtonsContainer: {
     flexDirection: "row",
     gap: 12,
@@ -831,6 +1443,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+
   tipsCard: {
     backgroundColor: "#0a1628",
     borderWidth: 1,
@@ -868,6 +1481,7 @@ const styles = StyleSheet.create({
     color: "#d1d5db",
     lineHeight: 20,
   },
+
   previewCard: {
     flex: 1,
     backgroundColor: "#1a1a1a",
@@ -882,6 +1496,7 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 12,
   },
+
   previewActions: {
     gap: 12,
     marginTop: 16,
@@ -927,6 +1542,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+
   errorBanner: {
     position: "absolute",
     bottom: 100,

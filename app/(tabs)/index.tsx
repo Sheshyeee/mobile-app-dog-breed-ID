@@ -1,8 +1,10 @@
+import authService from "@/services/authService";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   SafeAreaView,
@@ -12,13 +14,25 @@ import {
   View,
 } from "react-native";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 function LandingPage() {
-  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleStartScanning = () => {
-    router.push("/scan");
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      const response = await authService.signInWithGoogle();
+
+      if (!response.success) {
+        Alert.alert("Login Failed", response.message || "Please try again");
+      }
+      // Don't navigate here - the auth-success deep link route will handle it
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Something went wrong");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -112,7 +126,7 @@ function LandingPage() {
           <View style={styles.featureBox}>
             <Feather name="clock" size={24} color="#60a5fa" />
             <Text style={styles.featureTitle}>Origin</Text>
-            <Text style={styles.featureSubtitle}>History </Text>
+            <Text style={styles.featureSubtitle}>History</Text>
           </View>
 
           <View style={styles.featureBox}>
@@ -132,11 +146,23 @@ function LandingPage() {
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.startButton}
-            onPress={handleStartScanning}
+            onPress={handleGoogleSignIn}
             activeOpacity={0.8}
+            disabled={isLoading}
           >
-            <Feather name="camera" size={20} color="#ffffff" />
-            <Text style={styles.startButtonText}>Start Scanning</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Image
+                  source={{
+                    uri: "https://www.google.com/favicon.ico",
+                  }}
+                  style={styles.googleIcon}
+                />
+                <Text style={styles.startButtonText}>Sign in with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           <View style={styles.secondaryButtons}>
@@ -319,7 +345,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2a2a2a",
     padding: 16,
-
     alignItems: "center",
     gap: 8,
   },
@@ -356,6 +381,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#ffffff",
+  },
+  googleIcon: {
+    width: 24,
+    height: 24,
   },
   secondaryButtons: {
     flexDirection: "row",
