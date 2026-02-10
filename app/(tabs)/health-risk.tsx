@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Dimensions,
   SafeAreaView,
   ScrollView,
@@ -23,6 +24,19 @@ const ViewHealthRisk = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleBack();
+        return true;
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [scan_id]);
 
   useEffect(() => {
     const fetchHealthData = async () => {
@@ -50,14 +64,11 @@ const ViewHealthRisk = () => {
   }, [scan_id]);
 
   const handleBack = () => {
-    if (scan_id) {
-      router.push({
-        pathname: "/scan-result",
-        params: { scan_id: scan_id },
-      });
-    } else {
-      router.back();
-    }
+    // Navigate back to scan-result page
+    router.push({
+      pathname: "/scan-result",
+      params: { scan_id: scan_id },
+    });
   };
 
   if (loading) {

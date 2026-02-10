@@ -9,6 +9,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Dimensions,
   FlatList,
   Image,
@@ -264,6 +265,32 @@ function ScanHistoryPage() {
 
   // User menu dropdown state
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        // Close notification modal if open
+        if (showNotifications) {
+          setShowNotifications(false);
+          return true; // Prevent default behavior
+        }
+
+        // Close user menu if open
+        if (showUserMenu) {
+          setShowUserMenu(false);
+          return true; // Prevent default behavior
+        }
+
+        // Navigate back to scan page
+        router.push("/scan");
+        return true; // Prevent default behavior
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [showNotifications, showUserMenu, router]);
 
   const fetchUserAndScans = async () => {
     try {

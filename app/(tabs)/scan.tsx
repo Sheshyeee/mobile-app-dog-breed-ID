@@ -511,7 +511,7 @@ function ScanPage() {
     console.log("═══════════════════════════════════════");
     console.log("🔍 NOTIFICATION DEBUG - Component Mount");
     console.log("═══════════════════════════════════════");
-    console.log("User:", user?.name, user?.id);
+    console.log("User:", user?.name, user?.id); 
     console.log("Initial unreadCount:", unreadCount);
     console.log("═══════════════════════════════════════");
   }, []);

@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   SafeAreaView,
   ScrollView,
@@ -24,6 +25,19 @@ const ViewOrigin = () => {
   const [expandedAccordion, setExpandedAccordion] = useState<string | null>(
     null,
   );
+
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleBack();
+        return true;
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [scan_id]);
 
   useEffect(() => {
     const fetchOriginData = async () => {
@@ -66,14 +80,11 @@ const ViewOrigin = () => {
   };
 
   const handleBack = () => {
-    if (scan_id) {
-      router.push({
-        pathname: "/scan-result",
-        params: { scan_id: scan_id },
-      });
-    } else {
-      router.back();
-    }
+    // Navigate back to scan-result page
+    router.push({
+      pathname: "/scan-result",
+      params: { scan_id: scan_id },
+    });
   };
 
   if (loading) {

@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   SafeAreaView,
   ScrollView,
@@ -35,22 +36,32 @@ const ViewSimulation = () => {
   >("pending");
   const [isPolling, setIsPolling] = useState(false);
 
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleBack();
+        return true;
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [scanId]);
+
   const handleBack = () => {
-    if (scanId) {
-      router.push({
-        pathname: "/scan-result",
-        params: { scan_id: scanId },
-      });
-    } else {
-      router.back();
-    }
+    // Navigate back to scan-result page
+    router.push({
+      pathname: "/scan-result",
+      params: { scan_id: scanId },
+    });
   };
 
   // Fetch initial simulation data
   useEffect(() => {
     const fetchSimulationData = async () => {
       try {
-        console.log("📥 Fetching simulation data for:", scanId);
+        console.log("🔥 Fetching simulation data for:", scanId);
         const response = await ApiService.getSimulation(scanId);
 
         if (response.success && response.data) {
@@ -211,8 +222,8 @@ const ViewSimulation = () => {
                 We couldn't generate the age simulations. Please try again
                 later.
               </Text>
-              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-                <Text style={styles.backButtonText}>Back to Results</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={handleBack}>
+                <Text style={styles.retryButtonText}>Back to Results</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -416,6 +427,18 @@ const styles = StyleSheet.create({
     color: "#dc2626",
     textAlign: "center",
   },
+  retryButton: {
+    backgroundColor: "#3b82f6",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
   generatingBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -478,20 +501,20 @@ const styles = StyleSheet.create({
   imageWrapper: {
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#f3f4f6", // Added background for better presentation
-    justifyContent: "center", // Ensures contained image is centered
+    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
     alignItems: "center",
   },
   dogImage: {
     width: "100%",
-    height: undefined, // Remove fixed height
-    aspectRatio: 1, // Make it a square (adjust this if your images are portrait/landscape)
+    height: undefined,
+    aspectRatio: 1,
     borderRadius: 12,
   },
   placeholderContainer: {
     width: "100%",
-    height: undefined, // Remove fixed height
-    aspectRatio: 1, // Match the image aspect ratio
+    height: undefined,
+    aspectRatio: 1,
     backgroundColor: "#f3f4f6",
     borderRadius: 12,
     justifyContent: "center",
@@ -505,11 +528,6 @@ const styles = StyleSheet.create({
   imageCaption: {
     fontSize: 14,
     color: "#4b5563",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ffffff",
   },
 });
 

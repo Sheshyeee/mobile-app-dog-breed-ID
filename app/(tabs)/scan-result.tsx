@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   SafeAreaView,
   ScrollView,
@@ -36,6 +37,24 @@ const ScanResults = () => {
   const [error, setError] = useState<string | null>(null);
 
   const scanId = params.scan_id;
+
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleBackPress();
+        return true;
+      },
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+  const handleBackPress = () => {
+    // Navigate to scan page
+    router.push("/scan");
+  };
 
   useEffect(() => {
     const fetchResult = async () => {
@@ -154,10 +173,7 @@ const ScanResults = () => {
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.push("/scan")}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color="#ffffff" />
           </TouchableOpacity>
           <View style={styles.headerTextContainer}>
