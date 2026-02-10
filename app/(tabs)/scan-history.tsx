@@ -120,7 +120,7 @@ const NotificationModal: React.FC<{
                   style={notificationStyles.deleteButton}
                   onPress={() => onDelete(item.id)}
                 >
-                  <Feather name="trash-2" size={18} color="#ef4444" />
+                  <Feather name="trash-2" size={12} color="#ef4444" />
                 </TouchableOpacity>
               </TouchableOpacity>
             )}
@@ -366,6 +366,40 @@ function ScanHistoryPage() {
     }
   };
 
+  const handleDeleteScan = async (scanId: number) => {
+    Alert.alert(
+      "Delete Scan",
+      "Are you sure you want to delete this scan? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await ApiService.deleteScan(scanId);
+              if (response.success) {
+                // Remove from local state
+                setScans((prev) => prev.filter((scan) => scan.id !== scanId));
+                Alert.alert("Success", "Scan deleted successfully");
+              } else {
+                Alert.alert(
+                  "Error",
+                  response.message || "Failed to delete scan",
+                );
+              }
+            } catch (error) {
+              Alert.alert("Error", "Failed to delete scan. Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleLogout = async () => {
     setShowUserMenu(false);
     try {
@@ -546,47 +580,56 @@ function ScanHistoryPage() {
     });
 
     return (
-      <TouchableOpacity
-        style={styles.scanCard}
-        onPress={() => handleScanPress(item.scan_id)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.scanImageContainer}>
-          <Image source={{ uri: item.image_url }} style={styles.scanImage} />
-        </View>
-
-        <View style={styles.scanContent}>
-          <Text style={styles.scanBreed} numberOfLines={1}>
-            {item.breed}
-          </Text>
-
-          <View style={styles.dateRow}>
-            <Feather name="calendar" size={10} color="#9ca3af" />
-            <Text style={styles.scanDateText}>{formattedDate}</Text>
+      <View style={styles.scanCard}>
+        <TouchableOpacity
+          onPress={() => handleScanPress(item.scan_id)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.scanImageContainer}>
+            <Image source={{ uri: item.image_url }} style={styles.scanImage} />
+            {/* Delete Button Overlay */}
+            <TouchableOpacity
+              style={styles.deleteButtonOverlay}
+              onPress={() => handleDeleteScan(item.id)}
+              activeOpacity={0.8}
+            >
+              <Feather name="trash-2" size={16} color="#ffffff" />
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.scanFooter}>
-            <View
-              style={[
-                styles.statusBadge,
-                isVerified ? styles.verifiedBadge : styles.pendingBadge,
-              ]}
-            >
-              <Text
+          <View style={styles.scanContent}>
+            <Text style={styles.scanBreed} numberOfLines={1}>
+              {item.breed}
+            </Text>
+
+            <View style={styles.dateRow}>
+              <Feather name="calendar" size={10} color="#9ca3af" />
+              <Text style={styles.scanDateText}>{formattedDate}</Text>
+            </View>
+
+            <View style={styles.scanFooter}>
+              <View
                 style={[
-                  styles.statusText,
-                  isVerified ? styles.verifiedText : styles.pendingText,
+                  styles.statusBadge,
+                  isVerified ? styles.verifiedBadge : styles.pendingBadge,
                 ]}
               >
-                {isVerified ? "Verified" : "Pending"}
+                <Text
+                  style={[
+                    styles.statusText,
+                    isVerified ? styles.verifiedText : styles.pendingText,
+                  ]}
+                >
+                  {isVerified ? "Verified" : "Pending"}
+                </Text>
+              </View>
+              <Text style={styles.confidenceScoreText}>
+                {Math.round(item.confidence)}%
               </Text>
             </View>
-            <Text style={styles.confidenceScoreText}>
-              {Math.round(item.confidence)}%
-            </Text>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -881,11 +924,28 @@ const styles = StyleSheet.create({
   scanImageContainer: {
     width: "100%",
     height: 120,
+    position: "relative",
   },
   scanImage: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
+  },
+  deleteButtonOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(239, 68, 68, 0.9)",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   scanContent: {
     padding: 12,

@@ -3,10 +3,9 @@ import axios from "axios";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 
-const API_BASE_URL =
-  "https://gloomily-meritorious-giuseppe.ngrok-free.dev/api/v1";
+const API_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud/api/v1";
 
-const WEB_BASE_URL = "https://gloomily-meritorious-giuseppe.ngrok-free.dev";
+const WEB_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud";
 
 // ============================================================================
 // INTERFACES

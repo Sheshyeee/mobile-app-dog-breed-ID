@@ -1,8 +1,7 @@
 import axios from "axios";
 import authService from "./authService";
 
-const API_BASE_URL =
-  "https://gloomily-meritorious-giuseppe.ngrok-free.dev/api/v1";
+const API_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud/api/v1";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -59,15 +58,21 @@ class NotificationService {
    */
   async getNotifications(page: number = 1): Promise<NotificationResponse> {
     try {
+      console.log("📬 Fetching notifications, page:", page);
       const response = await api.get<NotificationResponse>(
         `/notifications?page=${page}`,
       );
+      console.log("✅ Notifications fetched:", response.data);
       return response.data;
     } catch (error: any) {
-      console.error("Fetch Notifications Error:", error);
+      console.error(
+        "❌ Fetch Notifications Error:",
+        error.response?.data || error.message,
+      );
       return {
         success: false,
-        message: "Failed to fetch notifications",
+        message:
+          error.response?.data?.message || "Failed to fetch notifications",
       };
     }
   }
@@ -77,16 +82,30 @@ class NotificationService {
    */
   async getUnreadCount(): Promise<NotificationResponse> {
     try {
+      console.log("🔢 Fetching unread count...");
       const response = await api.get<NotificationResponse>(
         "/notifications/unread-count",
       );
-      return response.data;
+      console.log("✅ Unread count response:", response.data);
+
+      // Make sure we're returning the count properly
+      const count = response.data.count ?? 0;
+      console.log("📊 Unread count:", count);
+
+      return {
+        success: true,
+        count: count,
+      };
     } catch (error: any) {
-      console.error("Fetch Unread Count Error:", error);
+      console.error(
+        "❌ Fetch Unread Count Error:",
+        error.response?.data || error.message,
+      );
       return {
         success: false,
         count: 0,
-        message: "Failed to fetch unread count",
+        message:
+          error.response?.data?.message || "Failed to fetch unread count",
       };
     }
   }
@@ -96,15 +115,22 @@ class NotificationService {
    */
   async markAsRead(notificationId: number): Promise<NotificationResponse> {
     try {
+      console.log("✓ Marking notification as read:", notificationId);
       const response = await api.post<NotificationResponse>(
         `/notifications/${notificationId}/read`,
       );
+      console.log("✅ Mark as read response:", response.data);
       return response.data;
     } catch (error: any) {
-      console.error("Mark As Read Error:", error);
+      console.error(
+        "❌ Mark As Read Error:",
+        error.response?.data || error.message,
+      );
       return {
         success: false,
-        message: "Failed to mark notification as read",
+        message:
+          error.response?.data?.message ||
+          "Failed to mark notification as read",
       };
     }
   }
@@ -114,15 +140,22 @@ class NotificationService {
    */
   async markAllAsRead(): Promise<NotificationResponse> {
     try {
+      console.log("✓ Marking all notifications as read...");
       const response = await api.post<NotificationResponse>(
         "/notifications/read-all",
       );
+      console.log("✅ Mark all as read response:", response.data);
       return response.data;
     } catch (error: any) {
-      console.error("Mark All As Read Error:", error);
+      console.error(
+        "❌ Mark All As Read Error:",
+        error.response?.data || error.message,
+      );
       return {
         success: false,
-        message: "Failed to mark all notifications as read",
+        message:
+          error.response?.data?.message ||
+          "Failed to mark all notifications as read",
       };
     }
   }
@@ -134,15 +167,21 @@ class NotificationService {
     notificationId: number,
   ): Promise<NotificationResponse> {
     try {
+      console.log("🗑️ Deleting notification:", notificationId);
       const response = await api.delete<NotificationResponse>(
         `/notifications/${notificationId}`,
       );
+      console.log("✅ Delete response:", response.data);
       return response.data;
     } catch (error: any) {
-      console.error("Delete Notification Error:", error);
+      console.error(
+        "❌ Delete Notification Error:",
+        error.response?.data || error.message,
+      );
       return {
         success: false,
-        message: "Failed to delete notification",
+        message:
+          error.response?.data?.message || "Failed to delete notification",
       };
     }
   }

@@ -68,6 +68,48 @@ const ScanResults = () => {
     fetchResult();
   }, [params.scan_id]);
 
+  // FIXED: Better filtering and validation of predictions
+  const filteredPredictions = React.useMemo(() => {
+    if (!result?.top_predictions) return [];
+
+    return result.top_predictions.filter((prediction) => {
+      // Remove invalid entries
+      if (!prediction || !prediction.breed) return false;
+
+      const breedLower = prediction.breed.toLowerCase().trim();
+
+      // Filter out placeholder/invalid breeds
+      const invalidBreeds = [
+        "other breeds",
+        "other breed",
+        "alternative 1",
+        "alternative 2",
+        "alternative 3",
+        "alternative",
+        "unknown",
+      ];
+
+      if (invalidBreeds.includes(breedLower)) return false;
+
+      // Must have positive confidence
+      if (!prediction.confidence || prediction.confidence <= 0) return false;
+
+      // Don't show if it's the same as the primary breed
+      if (result?.breed && breedLower === result.breed.toLowerCase().trim()) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [result]);
+
+  // Sort by confidence and take top 3
+  const topAlternatives = React.useMemo(() => {
+    return [...filteredPredictions]
+      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+      .slice(0, 3);
+  }, [filteredPredictions]);
+
   const ProgressBar = ({ value }: { value: number }) => (
     <View style={styles.progressContainer}>
       <View style={[styles.progressBar, { width: `${value}%` }]} />
@@ -156,15 +198,18 @@ const ScanResults = () => {
             </View>
           </View>
 
-          {/* Top Breeds Card */}
-          {result.top_predictions && result.top_predictions.length > 0 && (
+          {/* FIXED: Top Breeds Card - Only show if there are valid alternatives */}
+          {topAlternatives.length > 0 && (
             <View style={styles.topBreedsCard}>
               <View style={styles.topBreedsHeader}>
                 <Feather name="list" size={20} color="#60a5fa" />
-                <Text style={styles.topBreedsTitle}>Top Possible Breeds</Text>
+                <Text style={styles.topBreedsTitle}>Other Possible Breeds</Text>
               </View>
-              {result.top_predictions.slice(0, 3).map((prediction, index) => (
-                <View key={index} style={styles.predictionCard}>
+              {topAlternatives.map((prediction, index) => (
+                <View
+                  key={`${prediction.breed}-${index}`}
+                  style={styles.predictionCard}
+                >
                   <View style={styles.rankBadge}>
                     <Text style={styles.rankText}>{index + 1}</Text>
                   </View>
@@ -191,10 +236,27 @@ const ScanResults = () => {
             </View>
           )}
 
+          {/* FIXED: Show message when only one confident prediction */}
+          {topAlternatives.length === 0 && result.confidence >= 80 && (
+            <View style={styles.highConfidenceCard}>
+              <View style={styles.highConfidenceContent}>
+                <Feather name="check-circle" size={24} color="#10b981" />
+                <View style={styles.highConfidenceTextContainer}>
+                  <Text style={styles.highConfidenceTitle}>
+                    High Confidence Identification
+                  </Text>
+                  <Text style={styles.highConfidenceText}>
+                    Our system is very confident about this breed
+                    identification.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Explore More Section */}
           <Text style={styles.exploreTitle}>Explore More Insights</Text>
 
-          {/* FIXED: Changed pathname from /simulation to /view-simulation */}
           <TouchableOpacity
             style={styles.insightCard}
             onPress={() =>
@@ -502,6 +564,33 @@ const styles = StyleSheet.create({
     color: "#d1d5db",
     width: 45,
     textAlign: "right",
+  },
+  highConfidenceCard: {
+    backgroundColor: "#1a1a1a",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    padding: 20,
+    marginBottom: 16,
+  },
+  highConfidenceContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  highConfidenceTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  highConfidenceTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  highConfidenceText: {
+    fontSize: 14,
+    color: "#9ca3af",
+    lineHeight: 20,
   },
   exploreTitle: {
     fontSize: 20,

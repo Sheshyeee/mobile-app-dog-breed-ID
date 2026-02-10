@@ -2,8 +2,7 @@ import axios from "axios";
 import { Platform } from "react-native";
 import authService from "./authService";
 
-const API_BASE_URL =
-  "https://gloomily-meritorious-giuseppe.ngrok-free.dev/api/v1";
+const API_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud/api/v1";
 
 // Axios instance for GET requests (Dashboard, History)
 const api = axios.create({
@@ -84,6 +83,12 @@ export interface SimulationStatusResponse {
     has_1_year: boolean;
     has_3_years: boolean;
   };
+  message?: string;
+}
+
+// Delete scan response interface
+export interface DeleteScanResponse {
+  success: boolean;
   message?: string;
 }
 
@@ -271,6 +276,25 @@ class ApiService {
       };
     }
   }
+
+  /**
+   * Delete scan by ID
+   */
+  async deleteScan(scanId: number): Promise<DeleteScanResponse> {
+    try {
+      const response = await api.delete<DeleteScanResponse>(
+        `/results/${scanId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      console.error("Delete Scan Error:", error);
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to delete scan",
+      };
+    }
+  }
 }
 
 export default new ApiService();
+  

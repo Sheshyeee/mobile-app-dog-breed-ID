@@ -507,6 +507,83 @@ function ScanPage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
+  useEffect(() => {
+    console.log("═══════════════════════════════════════");
+    console.log("🔍 NOTIFICATION DEBUG - Component Mount");
+    console.log("═══════════════════════════════════════");
+    console.log("User:", user?.name, user?.id);
+    console.log("Initial unreadCount:", unreadCount);
+    console.log("═══════════════════════════════════════");
+  }, []);
+
+  useEffect(() => {
+    console.log("📊 UNREAD COUNT CHANGED:", unreadCount);
+    console.log("Type:", typeof unreadCount);
+    console.log("Is number:", typeof unreadCount === "number");
+    console.log("Is greater than 0:", unreadCount > 0);
+    console.log("Badge should show:", unreadCount > 0 ? "YES ✅" : "NO ❌");
+  }, [unreadCount]);
+
+  // Replace your fetchUnreadCount with this version:
+  const fetchUnreadCount = async () => {
+    console.log("");
+    console.log("═══════════════════════════════════════");
+    console.log("🔄 FETCHING UNREAD COUNT - START");
+    console.log("═══════════════════════════════════════");
+
+    try {
+      console.log("Step 1: Calling notificationService.getUnreadCount()");
+      const response = await notificationService.getUnreadCount();
+
+      console.log("Step 2: Response received");
+      console.log("Response:", JSON.stringify(response, null, 2));
+
+      console.log("Step 3: Checking response structure");
+      console.log("response.success:", response.success);
+      console.log("response.count:", response.count);
+      console.log("typeof response.count:", typeof response.count);
+
+      if (response.success && typeof response.count === "number") {
+        console.log("Step 4: Valid response, setting count");
+        console.log("Setting unreadCount to:", response.count);
+        setUnreadCount(response.count);
+        console.log("✅ SUCCESS: Count set successfully");
+      } else {
+        console.warn("⚠️ WARNING: Invalid response format");
+        console.warn("Expected: { success: true, count: number }");
+        console.warn("Got:", response);
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error("═══════════════════════════════════════");
+      console.error("❌ ERROR in fetchUnreadCount");
+      console.error("═══════════════════════════════════════");
+      console.error("Error:", error);
+      if (error instanceof Error) {
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      }
+      console.error("═══════════════════════════════════════");
+      setUnreadCount(0);
+    }
+
+    console.log("═══════════════════════════════════════");
+    console.log("🔄 FETCHING UNREAD COUNT - END");
+    console.log("═══════════════════════════════════════");
+    console.log("");
+  };
+
+  // Add this test function - call it from a button to manually test
+  const testNotificationBadge = async () => {
+    console.log("🧪 MANUAL TEST - Force setting count to 5");
+    setUnreadCount(5);
+
+    setTimeout(() => {
+      console.log("🧪 MANUAL TEST - After 2 seconds, fetch real count");
+      fetchUnreadCount();
+    }, 2000);
+  };
+
   // Fetch user data and notifications on mount
   useEffect(() => {
     const fetchUserAndNotifications = async () => {
@@ -536,17 +613,6 @@ function ScanPage() {
       console.error("Failed to fetch notifications:", error);
     } finally {
       setLoadingNotifications(false);
-    }
-  };
-
-  const fetchUnreadCount = async () => {
-    try {
-      const response = await notificationService.getUnreadCount();
-      if (response.success && response.count !== undefined) {
-        setUnreadCount(response.count);
-      }
-    } catch (error) {
-      console.error("Failed to fetch unread count:", error);
     }
   };
 
