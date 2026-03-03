@@ -56,7 +56,7 @@ export interface ResultResponse {
   message?: string;
 }
 
-// NEW: Simulation response interface
+// Simulation response interface
 export interface SimulationResponse {
   success: boolean;
   data?: {
@@ -71,7 +71,7 @@ export interface SimulationResponse {
   message?: string;
 }
 
-// NEW: Simulation status response interface
+// Simulation status response interface
 export interface SimulationStatusResponse {
   success: boolean;
   data?: {
@@ -89,6 +89,43 @@ export interface SimulationStatusResponse {
 // Delete scan response interface
 export interface DeleteScanResponse {
   success: boolean;
+  message?: string;
+}
+
+// Scan history item
+export interface ScanHistoryItem {
+  id: number;
+  scan_id: string;
+  image_url: string;
+  breed: string;
+  confidence: number;
+  created_at: string;
+  status?: "pending" | "verified";
+}
+
+// Server-side aggregate stats (computed across ALL records, not just loaded page)
+export interface ScanStats {
+  total: number;
+  verified_count: number;
+  pending_count: number;
+  avg_confidence: number;
+}
+
+// Pagination metadata
+export interface PaginationMeta {
+  total: number;
+  per_page: number;
+  current_page: number;
+  last_page: number;
+  has_more: boolean;
+}
+
+// Paginated results response
+export interface RecentResultsResponse {
+  success: boolean;
+  data?: ScanHistoryItem[];
+  stats?: ScanStats;
+  pagination?: PaginationMeta;
   message?: string;
 }
 
@@ -190,7 +227,7 @@ class ApiService {
   }
 
   /**
-   * NEW: Get simulation data by scan ID
+   * Get simulation data by scan ID
    */
   async getSimulation(scanId: string): Promise<SimulationResponse> {
     try {
@@ -208,7 +245,7 @@ class ApiService {
   }
 
   /**
-   * NEW: Poll simulation status
+   * Poll simulation status
    */
   async getSimulationStatus(scanId: string): Promise<SimulationStatusResponse> {
     try {
@@ -250,23 +287,19 @@ class ApiService {
   }
 
   /**
-   * Get recent results
+   * Get paginated scan results.
+   * Returns server-side aggregate stats (total, verified, pending, avg confidence)
+   * computed across ALL records — not just the current page — so stat cards
+   * always show the full picture regardless of how many pages have been loaded.
    */
-  async getRecentResults(limit: number = 10): Promise<{
-    success: boolean;
-    data?: Array<{
-      id: number;
-      scan_id: string;
-      image_url: string;
-      breed: string;
-      confidence: number;
-      created_at: string;
-      status?: "pending" | "verified";
-    }>;
-    message?: string;
-  }> {
+  async getRecentResults(
+    page: number = 1,
+    perPage: number = 20,
+  ): Promise<RecentResultsResponse> {
     try {
-      const response = await api.get(`/results?limit=${limit}`);
+      const response = await api.get(
+        `/results?page=${page}&per_page=${perPage}`,
+      );
       return response.data;
     } catch (error: any) {
       console.error("Fetch Recent Results Error:", error);
@@ -297,4 +330,3 @@ class ApiService {
 }
 
 export default new ApiService();
-  

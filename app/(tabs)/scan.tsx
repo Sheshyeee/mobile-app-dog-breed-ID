@@ -15,7 +15,9 @@ import {
   FlatList,
   Image,
   Modal,
+  Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -24,18 +26,39 @@ import {
 
 const { width, height } = Dimensions.get("window");
 
+// ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
+const C = {
+  green: "#16a34a",
+  greenLight: "#22c55e",
+  greenPale: "#dcfce7",
+  greenMid: "#bbf7d0",
+  greenDim: "#f0fdf4",
+  white: "#ffffff",
+  offWhite: "#f8fafc",
+  border: "#e2e8f0",
+  borderLight: "#f1f5f9",
+  text: "#0f172a",
+  textMid: "#334155",
+  textSoft: "#64748b",
+  textFaint: "#94a3b8",
+  red: "#ef4444",
+  redPale: "#fef2f2",
+  amber: "#f59e0b",
+  amberPale: "#fffbeb",
+  shadow: "rgba(22,163,74,0.12)",
+};
+
+// ─── INTERFACES ─────────────────────────────────────────────────────────────
 interface PredictionResult {
   breed: string;
   confidence: number;
 }
-
 interface AnalysisResult {
   breed: string;
   confidence: number;
   top_predictions: PredictionResult[];
   message: string;
 }
-
 interface AnalysisStage {
   id: string;
   label: string;
@@ -44,7 +67,7 @@ interface AnalysisStage {
 }
 
 // ============================================================================
-// NOTIFICATION MODAL COMPONENT
+// NOTIFICATION MODAL
 // ============================================================================
 const NotificationModal: React.FC<{
   visible: boolean;
@@ -54,7 +77,7 @@ const NotificationModal: React.FC<{
   onMarkAsRead: (id: number) => void;
   onMarkAllAsRead: () => void;
   onDelete: (id: number) => void;
-  onNotificationPress: (notification: Notification) => void;
+  onNotificationPress: (n: Notification) => void;
 }> = ({
   visible,
   onClose,
@@ -64,217 +87,215 @@ const NotificationModal: React.FC<{
   onMarkAllAsRead,
   onDelete,
   onNotificationPress,
-}) => {
-  return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={notificationStyles.overlay}>
-        <View style={notificationStyles.container}>
-          {/* Header */}
-          <View style={notificationStyles.header}>
-            <Text style={notificationStyles.headerTitle}>Notifications</Text>
-            <View style={notificationStyles.headerActions}>
-              {notifications.length > 0 && (
-                <TouchableOpacity onPress={onMarkAllAsRead}>
-                  <Text style={notificationStyles.markAllText}>
-                    Mark all read
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={onClose}>
-                <Feather name="x" size={24} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Notification List */}
-          <FlatList
-            data={notifications}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  notificationStyles.notificationCard,
-                  !item.read && notificationStyles.unreadCard,
-                ]}
-                onPress={() => onNotificationPress(item)}
-              >
-                <View style={notificationStyles.notificationIcon}>
-                  <Feather
-                    name={
-                      item.type === "scan_verified" ? "check-circle" : "bell"
-                    }
-                    size={24}
-                    color="#3b82f6"
-                  />
-                  {!item.read && <View style={notificationStyles.unreadDot} />}
-                </View>
-
-                <View style={notificationStyles.notificationContent}>
-                  <Text style={notificationStyles.notificationTitle}>
-                    {item.title}
-                  </Text>
-                  <Text style={notificationStyles.notificationMessage}>
-                    {item.message}
-                  </Text>
-                  <Text style={notificationStyles.notificationTime}>
-                    {new Date(item.created_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={notificationStyles.deleteButton}
-                  onPress={() => onDelete(item.id)}
-                >
-                  <Feather name="trash-2" size={18} color="#ef4444" />
-                </TouchableOpacity>
+}) => (
+  <Modal visible={visible} animationType="slide" transparent>
+    <View style={ns.overlay}>
+      <View style={ns.sheet}>
+        <View style={ns.handle} />
+        <View style={ns.header}>
+          <Text style={ns.title}>Notifications</Text>
+          <View style={ns.headerRight}>
+            {notifications.length > 0 && (
+              <TouchableOpacity onPress={onMarkAllAsRead} style={ns.markAllBtn}>
+                <Text style={ns.markAllText}>Mark all read</Text>
               </TouchableOpacity>
             )}
-            ListEmptyComponent={
-              <View style={notificationStyles.emptyState}>
-                <Feather name="bell-off" size={48} color="#6b7280" />
-                <Text style={notificationStyles.emptyTitle}>
-                  No notifications
+            <TouchableOpacity onPress={onClose} style={ns.closeBtn}>
+              <Feather name="x" size={18} color={C.textMid} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <FlatList
+          data={notifications}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={ns.list}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[ns.card, !item.read && ns.unreadCard]}
+              onPress={() => onNotificationPress(item)}
+              activeOpacity={0.75}
+            >
+              <View style={[ns.iconWrap, !item.read && ns.iconWrapUnread]}>
+                <Feather
+                  name={item.type === "scan_verified" ? "check-circle" : "bell"}
+                  size={16}
+                  color={item.read ? C.textSoft : C.green}
+                />
+                {!item.read && <View style={ns.dot} />}
+              </View>
+              <View style={ns.cardBody}>
+                <Text style={ns.cardTitle} numberOfLines={1}>
+                  {item.title}
                 </Text>
-                <Text style={notificationStyles.emptySubtitle}>
-                  You're all caught up!
+                <Text style={ns.cardMsg} numberOfLines={2}>
+                  {item.message}
+                </Text>
+                <Text style={ns.cardTime}>
+                  {new Date(item.created_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
                 </Text>
               </View>
-            }
-            contentContainerStyle={notificationStyles.listContent}
-          />
-        </View>
+              <TouchableOpacity
+                onPress={() => onDelete(item.id)}
+                style={ns.delBtn}
+              >
+                <Feather name="trash-2" size={15} color={C.textFaint} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <View style={ns.empty}>
+              <View style={ns.emptyIcon}>
+                <Feather name="bell-off" size={28} color={C.textFaint} />
+              </View>
+              <Text style={ns.emptyTitle}>All caught up</Text>
+              <Text style={ns.emptySub}>No new notifications</Text>
+            </View>
+          }
+        />
       </View>
-    </Modal>
-  );
-};
+    </View>
+  </Modal>
+);
 
-const notificationStyles = StyleSheet.create({
+const ns = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(15,23,42,0.4)",
     justifyContent: "flex-end",
   },
-  container: {
-    backgroundColor: "#1a1a1a",
+  sheet: {
+    backgroundColor: C.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: height * 0.8,
-    paddingBottom: 20,
+    maxHeight: height * 0.82,
+    paddingBottom: 32,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.border,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 4,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a2a",
+    borderBottomColor: C.borderLight,
   },
-  headerTitle: {
-    fontSize: 20,
+  title: {
+    fontSize: 16,
     fontWeight: "700",
-    color: "#ffffff",
+    color: C.text,
+    letterSpacing: -0.3,
   },
-  headerActions: {
-    flexDirection: "row",
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  markAllBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: C.greenPale,
+    borderRadius: 8,
+  },
+  markAllText: { fontSize: 12, fontWeight: "600", color: C.green },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: C.offWhite,
     alignItems: "center",
-    gap: 16,
+    justifyContent: "center",
   },
-  markAllText: {
-    color: "#3b82f6",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  listContent: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  notificationCard: {
+  list: { padding: 16, paddingBottom: 8, flexGrow: 1 },
+  card: {
     flexDirection: "row",
-    backgroundColor: "#0f0f0f",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    alignItems: "flex-start",
+    backgroundColor: C.offWhite,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: C.border,
   },
-  unreadCard: {
-    backgroundColor: "#0a1628",
-    borderColor: "#1e40af",
-  },
-  notificationIcon: {
-    position: "relative",
+  unreadCard: { backgroundColor: C.greenDim, borderColor: C.greenMid },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
+    position: "relative",
   },
-  unreadDot: {
+  iconWrapUnread: { backgroundColor: C.greenPale },
+  dot: {
     position: "absolute",
-    top: 0,
-    right: 0,
+    top: -2,
+    right: -2,
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#ef4444",
+    backgroundColor: C.red,
+    borderWidth: 1.5,
+    borderColor: C.white,
   },
-  notificationContent: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 15,
+  cardBody: { flex: 1 },
+  cardTitle: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#ffffff",
-    marginBottom: 4,
+    color: C.text,
+    marginBottom: 3,
   },
-  notificationMessage: {
-    fontSize: 14,
-    color: "#9ca3af",
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  notificationTime: {
-    fontSize: 12,
-    color: "#6b7280",
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  emptyState: {
+  cardMsg: { fontSize: 12, color: C.textSoft, lineHeight: 18, marginBottom: 5 },
+  cardTime: { fontSize: 11, color: C.textFaint },
+  delBtn: { padding: 6 },
+  empty: { alignItems: "center", paddingVertical: 48 },
+  emptyIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: C.offWhite,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 60,
+    marginBottom: 12,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#ffffff",
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: "#9ca3af",
-    marginTop: 8,
-  },
+  emptyTitle: { fontSize: 14, fontWeight: "600", color: C.textMid },
+  emptySub: { fontSize: 12, color: C.textFaint, marginTop: 4 },
 });
 
 // ============================================================================
-// LOADING MODAL COMPONENT
+// ANALYSIS LOADING MODAL
 // ============================================================================
 const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const stages: AnalysisStage[] = [
-    { id: "upload", label: "Uploading image", icon: "upload", duration: 800 },
-    { id: "identify", label: "Identifying breed", icon: "cpu", duration: 3500 },
+    {
+      id: "upload",
+      label: "Uploading image",
+      icon: "upload-cloud",
+      duration: 800,
+    },
+    { id: "identify", label: "Identifying breed", icon: "cpu", duration: 6000 },
     {
       id: "features",
       label: "Extracting features",
-      icon: "activity",
+      icon: "layers",
       duration: 2000,
     },
     {
@@ -285,36 +306,42 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
     },
     {
       id: "health",
-      label: "Creating health analysis",
+      label: "Building health profile",
       icon: "heart",
       duration: 2000,
     },
     {
       id: "finalize",
-      label: "Finalizing analysis",
+      label: "Finalizing results",
       icon: "check-circle",
       duration: 1500,
     },
   ];
-
-  const totalDuration = stages.reduce((sum, stage) => sum + stage.duration, 0);
+  const totalDuration = stages.reduce((s, st) => s + st.duration, 0);
 
   useEffect(() => {
-    const spin = Animated.loop(
+    Animated.loop(
       Animated.timing(spinAnim, {
         toValue: 1,
         duration: 2000,
         useNativeDriver: true,
       }),
-    );
-    spin.start();
-    return () => spin.stop();
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.08,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   }, []);
-
-  const spinRotation = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
 
   useEffect(() => {
     if (!visible) {
@@ -323,45 +350,38 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
       progressAnim.setValue(0);
       return;
     }
-
-    let cumulativeTime = 0;
-    let currentIndex = 0;
-
-    const interval = setInterval(() => {
-      cumulativeTime += 50;
-      const newProgress = Math.min((cumulativeTime / totalDuration) * 100, 100);
-      setProgress(newProgress);
-
+    let elapsed = 0;
+    const iv = setInterval(() => {
+      elapsed += 50;
+      const pct = Math.min((elapsed / totalDuration) * 100, 100);
+      setProgress(pct);
       Animated.timing(progressAnim, {
-        toValue: newProgress,
+        toValue: pct,
         duration: 50,
         useNativeDriver: false,
       }).start();
-
-      let timeSum = 0;
+      let sum = 0;
       for (let i = 0; i < stages.length; i++) {
-        timeSum += stages[i].duration;
-        if (cumulativeTime < timeSum) {
-          currentIndex = i;
+        sum += stages[i].duration;
+        if (elapsed < sum) {
+          setCurrentStageIndex(i);
           break;
         }
       }
-
-      setCurrentStageIndex(currentIndex);
-
-      if (cumulativeTime >= totalDuration) {
-        clearInterval(interval);
-      }
+      if (elapsed >= totalDuration) clearInterval(iv);
     }, 50);
+    return () => clearInterval(iv);
+  }, [visible]);
 
-    return () => clearInterval(interval);
-  }, [visible, totalDuration]);
-
-  const currentStage = stages[currentStageIndex];
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: ["0%", "100%"],
   });
+  const current = stages[currentStageIndex];
 
   return (
     <Modal
@@ -370,122 +390,177 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
       animationType="fade"
       statusBarTranslucent
     >
-      <View style={loadingStyles.overlay}>
-        <View style={loadingStyles.container}>
-          <View style={loadingStyles.header}>
-            <View style={loadingStyles.headerContent}>
-              <View style={loadingStyles.iconCircle}>
-                <Feather name="cpu" size={24} color="#ffffff" />
-              </View>
-              <View style={loadingStyles.headerText}>
-                <Text style={loadingStyles.title}>Analyzing Your Pet</Text>
-                <Text style={loadingStyles.subtitle}>
-                  AI-powered breed identification
-                </Text>
-              </View>
+      <View style={ls.overlay}>
+        <View style={ls.card}>
+          {/* Header */}
+          <View style={ls.cardHeader}>
+            <Animated.View
+              style={[ls.bigIcon, { transform: [{ scale: pulseAnim }] }]}
+            >
+              <Feather name="cpu" size={22} color={C.white} />
+            </Animated.View>
+            <View>
+              <Text style={ls.cardTitle}>Analyzing Your Pet</Text>
+              <Text style={ls.cardSub}>
+                Breed identification in progress
+              </Text>
             </View>
           </View>
 
-          <View style={loadingStyles.content}>
-            <View style={loadingStyles.currentStageCard}>
-              <View style={loadingStyles.stageIconContainer}>
-                <View style={loadingStyles.pulseRing}>
-                  <View style={loadingStyles.pulseRingInner} />
-                </View>
-                <Animated.View
-                  style={[
-                    loadingStyles.stageIcon,
-                    { transform: [{ rotate: spinRotation }] },
-                  ]}
-                >
-                  <Feather
-                    name={currentStage?.icon}
-                    size={20}
-                    color="#ffffff"
-                  />
-                </Animated.View>
-              </View>
-              <View style={loadingStyles.stageTextContainer}>
-                <Text style={loadingStyles.stageLabel}>
-                  {currentStage?.label}...
-                </Text>
-                <View style={loadingStyles.stageInfo}>
-                  <Text style={loadingStyles.stepText}>
-                    Step {currentStageIndex + 1} of {stages.length}
-                  </Text>
-                  <Text style={loadingStyles.dotSeparator}>•</Text>
-                  <Text style={loadingStyles.percentText}>
-                    {Math.round(progress)}% Complete
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={loadingStyles.progressSection}>
-              <View style={loadingStyles.progressBar}>
-                <Animated.View
-                  style={[loadingStyles.progressFill, { width: progressWidth }]}
-                />
-              </View>
-            </View>
-
-            <View style={loadingStyles.stepsList}>
-              <Text style={loadingStyles.stepsTitle}>PROGRESS STEPS</Text>
-              {stages.map((stage, index) => {
-                const isCompleted = index < currentStageIndex;
-                const isCurrent = index === currentStageIndex;
-
-                return (
-                  <View
-                    key={stage.id}
-                    style={[
-                      loadingStyles.stepItem,
-                      { opacity: isCompleted || isCurrent ? 1 : 0.4 },
-                    ]}
-                  >
-                    <View style={loadingStyles.stepIndicator}>
-                      {isCompleted ? (
-                        <View style={loadingStyles.completedIcon}>
-                          <Feather name="check" size={12} color="#ffffff" />
-                        </View>
-                      ) : isCurrent ? (
-                        <View style={loadingStyles.currentIcon}>
-                          <Animated.View
-                            style={{ transform: [{ rotate: spinRotation }] }}
-                          >
-                            <Feather name="loader" size={12} color="#ffffff" />
-                          </Animated.View>
-                        </View>
-                      ) : (
-                        <View style={loadingStyles.pendingIcon} />
-                      )}
-                    </View>
-                    <Text
-                      style={[
-                        loadingStyles.stepLabel,
-                        isCompleted && loadingStyles.stepLabelCompleted,
-                        isCurrent && loadingStyles.stepLabelCurrent,
-                      ]}
-                    >
-                      {stage.label}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-
-            <View style={loadingStyles.footer}>
-              <Feather name="clock" size={14} color="#f59e0b" />
-              <Text style={loadingStyles.footerText}>
-                This usually takes 10-15 seconds
+          {/* Current stage */}
+          <View style={ls.stageRow}>
+            <Animated.View
+              style={[ls.stageIcon, { transform: [{ rotate: spin }] }]}
+            >
+              <Feather name={current?.icon} size={18} color={C.green} />
+            </Animated.View>
+            <View style={{ flex: 1 }}>
+              <Text style={ls.stageLabel}>{current?.label}...</Text>
+              <Text style={ls.stageStep}>
+                Step {currentStageIndex + 1} of {stages.length} ·{" "}
+                {Math.round(progress)}%
               </Text>
             </View>
+          </View>
+
+          {/* Progress bar */}
+          <View style={ls.barTrack}>
+            <Animated.View style={[ls.barFill, { width: progressWidth }]} />
+          </View>
+
+          {/* Steps list */}
+          <View style={ls.stepsList}>
+            {stages.map((s, i) => {
+              const done = i < currentStageIndex;
+              const curr = i === currentStageIndex;
+              return (
+                <View
+                  key={s.id}
+                  style={[ls.stepRow, { opacity: done || curr ? 1 : 0.35 }]}
+                >
+                  <View
+                    style={[
+                      ls.stepDot,
+                      done
+                        ? ls.stepDotDone
+                        : curr
+                          ? ls.stepDotCurr
+                          : ls.stepDotPend,
+                    ]}
+                  >
+                    {done ? (
+                      <Feather name="check" size={9} color={C.white} />
+                    ) : curr ? (
+                      <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                        <Feather name="loader" size={9} color={C.white} />
+                      </Animated.View>
+                    ) : null}
+                  </View>
+                  <Text
+                    style={[
+                      ls.stepLabel,
+                      done && ls.stepLabelDone,
+                      curr && ls.stepLabelCurr,
+                    ]}
+                  >
+                    {s.label}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>
     </Modal>
   );
 };
+
+const ls = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: C.white,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 1,
+    shadowRadius: 40,
+    elevation: 20,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginBottom: 20,
+  },
+  bigIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: C.green,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.text,
+    letterSpacing: -0.3,
+  },
+  cardSub: { fontSize: 12, color: C.textSoft, marginTop: 2 },
+  stageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: C.greenDim,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: C.greenMid,
+  },
+  stageIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stageLabel: { fontSize: 13, fontWeight: "600", color: C.text },
+  stageStep: { fontSize: 11, color: C.textSoft, marginTop: 2 },
+  barTrack: {
+    height: 6,
+    backgroundColor: C.borderLight,
+    borderRadius: 3,
+    overflow: "hidden",
+    marginBottom: 16,
+  },
+  barFill: { height: "100%", backgroundColor: C.green, borderRadius: 3 },
+  stepsList: { gap: 8 },
+  stepRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  stepDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepDotDone: { backgroundColor: C.green },
+  stepDotCurr: { backgroundColor: C.greenLight },
+  stepDotPend: { backgroundColor: C.border },
+  stepLabel: { fontSize: 12, color: C.textFaint },
+  stepLabelDone: { color: C.green, fontWeight: "500" },
+  stepLabelCurr: { color: C.text, fontWeight: "600" },
+});
 
 // ============================================================================
 // MAIN SCAN PAGE
@@ -494,150 +569,82 @@ function ScanPage() {
   const router = useRouter();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
-
   const [showUserMenu, setShowUserMenu] = useState(false);
-
-  // Notification states
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    console.log("═══════════════════════════════════════");
-    console.log("🔍 NOTIFICATION DEBUG - Component Mount");
-    console.log("═══════════════════════════════════════");
-    console.log("User:", user?.name, user?.id); 
-    console.log("Initial unreadCount:", unreadCount);
-    console.log("═══════════════════════════════════════");
-  }, []);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-  useEffect(() => {
-    console.log("📊 UNREAD COUNT CHANGED:", unreadCount);
-    console.log("Type:", typeof unreadCount);
-    console.log("Is number:", typeof unreadCount === "number");
-    console.log("Is greater than 0:", unreadCount > 0);
-    console.log("Badge should show:", unreadCount > 0 ? "YES ✅" : "NO ❌");
-  }, [unreadCount]);
-
-  // Replace your fetchUnreadCount with this version:
-  const fetchUnreadCount = async () => {
-    console.log("");
-    console.log("═══════════════════════════════════════");
-    console.log("🔄 FETCHING UNREAD COUNT - START");
-    console.log("═══════════════════════════════════════");
-
-    try {
-      console.log("Step 1: Calling notificationService.getUnreadCount()");
-      const response = await notificationService.getUnreadCount();
-
-      console.log("Step 2: Response received");
-      console.log("Response:", JSON.stringify(response, null, 2));
-
-      console.log("Step 3: Checking response structure");
-      console.log("response.success:", response.success);
-      console.log("response.count:", response.count);
-      console.log("typeof response.count:", typeof response.count);
-
-      if (response.success && typeof response.count === "number") {
-        console.log("Step 4: Valid response, setting count");
-        console.log("Setting unreadCount to:", response.count);
-        setUnreadCount(response.count);
-        console.log("✅ SUCCESS: Count set successfully");
-      } else {
-        console.warn("⚠️ WARNING: Invalid response format");
-        console.warn("Expected: { success: true, count: number }");
-        console.warn("Got:", response);
-        setUnreadCount(0);
-      }
-    } catch (error) {
-      console.error("═══════════════════════════════════════");
-      console.error("❌ ERROR in fetchUnreadCount");
-      console.error("═══════════════════════════════════════");
-      console.error("Error:", error);
-      if (error instanceof Error) {
-        console.error("Error message:", error.message);
-        console.error("Error stack:", error.stack);
-      }
-      console.error("═══════════════════════════════════════");
-      setUnreadCount(0);
-    }
-
-    console.log("═══════════════════════════════════════");
-    console.log("🔄 FETCHING UNREAD COUNT - END");
-    console.log("═══════════════════════════════════════");
-    console.log("");
-  };
-
-  // Add this test function - call it from a button to manually test
-  const testNotificationBadge = async () => {
-    console.log("🧪 MANUAL TEST - Force setting count to 5");
-    setUnreadCount(5);
-
-    setTimeout(() => {
-      console.log("🧪 MANUAL TEST - After 2 seconds, fetch real count");
-      fetchUnreadCount();
-    }, 2000);
-  };
-
-  // Fetch user data and notifications on mount
-  useEffect(() => {
-    const fetchUserAndNotifications = async () => {
+    const init = async () => {
       try {
-        const currentUser = await authService.getCurrentUser();
-        setUser(currentUser);
+        const u = await authService.getCurrentUser();
+        setUser(u);
         await fetchNotifications();
         await fetchUnreadCount();
-      } catch (err) {
-        console.error("Failed to fetch user:", err);
+      } catch {
+        /* silent */
       } finally {
         setLoadingUser(false);
       }
     };
-
-    fetchUserAndNotifications();
+    init();
   }, []);
 
-  const fetchNotifications = async () => {
-    setLoadingNotifications(true);
+  const fetchUnreadCount = async () => {
     try {
-      const response = await notificationService.getNotifications();
-      if (response.success && response.notifications) {
-        setNotifications(response.notifications.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch notifications:", error);
-    } finally {
-      setLoadingNotifications(false);
+      const r = await notificationService.getUnreadCount();
+      if (r.success && typeof r.count === "number") setUnreadCount(r.count);
+      else setUnreadCount(0);
+    } catch {
+      setUnreadCount(0);
     }
   };
 
-  const handleNotificationPress = async (notification: Notification) => {
-    // Mark as read
-    if (!notification.read) {
-      await handleMarkAsRead(notification.id);
+  const fetchNotifications = async () => {
+    try {
+      const r = await notificationService.getNotifications();
+      if (r.success && r.notifications) setNotifications(r.notifications.data);
+    } catch {
+      /* silent */
     }
+  };
 
-    // Navigate to scan result if available
-    if (notification.data?.scan_id) {
+  const handleNotificationPress = async (n: Notification) => {
+    if (!n.read) await handleMarkAsRead(n.id);
+    if (n.data?.scan_id) {
       setShowNotifications(false);
       router.push({
         pathname: "/scan-result",
-        params: { scan_id: notification.data.scan_id },
+        params: { scan_id: n.data.scan_id },
       });
     }
   };
 
-  const handleMarkAsRead = async (notificationId: number) => {
-    const response = await notificationService.markAsRead(notificationId);
-    if (response.success) {
+  const handleMarkAsRead = async (id: number) => {
+    const r = await notificationService.markAsRead(id);
+    if (r.success) {
       setNotifications((prev) =>
         prev.map((n) =>
-          n.id === notificationId
+          n.id === id
             ? { ...n, read: true, read_at: new Date().toISOString() }
             : n,
         ),
@@ -647,8 +654,8 @@ function ScanPage() {
   };
 
   const handleMarkAllAsRead = async () => {
-    const response = await notificationService.markAllAsRead();
-    if (response.success) {
+    const r = await notificationService.markAllAsRead();
+    if (r.success) {
       setNotifications((prev) =>
         prev.map((n) => ({
           ...n,
@@ -660,16 +667,17 @@ function ScanPage() {
     }
   };
 
-  const handleDeleteNotification = async (notificationId: number) => {
-    const response =
-      await notificationService.deleteNotification(notificationId);
-    if (response.success) {
-      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+  const handleDeleteNotification = async (id: number) => {
+    const r = await notificationService.deleteNotification(id);
+    if (r.success) {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
       await fetchUnreadCount();
     }
   };
 
-  const requestCameraPermission = async () => {
+  const getFirstName = (name?: string) => (name ? name.split(" ")[0] : "User");
+
+  const requestCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Permission needed", "Camera permission is required");
@@ -678,12 +686,7 @@ function ScanPage() {
     return true;
   };
 
-  const getFirstName = (fullName: string | undefined) => {
-    if (!fullName) return "User";
-    return fullName.split(" ")[0];
-  };
-
-  const requestMediaLibraryPermission = async () => {
+  const requestGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Permission needed", "Photo library access is required");
@@ -697,41 +700,33 @@ function ScanPage() {
     try {
       await authService.logout();
       router.replace("/");
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to logout. Please try again.");
     }
   };
 
   const handleTakePhoto = async () => {
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) return;
-
-    const result = await ImagePicker.launchCameraAsync({
+    if (!(await requestCamera())) return;
+    const r = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
-      quality: 0.8,
+      quality: 0.85,
     });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-      setResult(null);
+    if (!r.canceled) {
+      setImageUri(r.assets[0].uri);
       setError(null);
     }
   };
 
   const handlePickImage = async () => {
-    const hasPermission = await requestMediaLibraryPermission();
-    if (!hasPermission) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
+    if (!(await requestGallery())) return;
+    const r = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
-      quality: 0.8,
+      quality: 0.85,
     });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-      setResult(null);
+    if (!r.canceled) {
+      setImageUri(r.assets[0].uri);
       setError(null);
     }
   };
@@ -741,63 +736,75 @@ function ScanPage() {
       Alert.alert("No image", "Please select an image first");
       return;
     }
-
     setProcessing(true);
     setError(null);
-
     try {
-      console.log("Starting analysis...");
-
       const response = await ApiService.analyzeImage(imageUri);
-
       if (response.success && response.data) {
-        console.log("Scan successful:", response.data.scan_id);
-
         setImageUri(null);
-        setResult(null);
         setError(null);
         setProcessing(false);
-
         router.push({
           pathname: "/scan-result",
           params: { scan_id: response.data.scan_id },
         });
       } else {
-        let displayMessage = response.message || "Analysis failed";
-
+        let msg = response.message || "Analysis failed";
         if (response.errors) {
-          const firstErrorKey = Object.keys(response.errors)[0];
-          if (firstErrorKey && response.errors[firstErrorKey]) {
-            displayMessage = response.errors[firstErrorKey][0];
-          }
+          const k = Object.keys(response.errors)[0];
+          if (k && response.errors[k]) msg = response.errors[k][0];
         }
-
-        setError(displayMessage);
+        setError(msg);
         setProcessing(false);
-        Alert.alert("Upload Failed", displayMessage);
+        Alert.alert("Upload Failed", msg);
       }
-    } catch (err: any) {
-      const msg = "Connection failed. Check server.";
-      setError(msg);
+    } catch {
+      setError("Connection failed. Check server.");
       setProcessing(false);
-      Alert.alert("Error", msg);
     }
   };
 
   const handleReset = () => {
     setImageUri(null);
-    setResult(null);
     setError(null);
   };
 
-  const handleScanHistory = () => {
-    router.push("/scan-history");
-  };
+  // ─── HOW IT WORKS DATA ────────────────────────────────────────────────────
+  const howItWorks = [
+    {
+      icon: "upload-cloud",
+      title: "Upload Photo",
+      desc: "Choose from gallery or take a live photo of your dog",
+    },
+    {
+      icon: "cpu",
+      title: "Analysis",
+      desc: "Our model identifies visual breed characteristics",
+    },
+    {
+      icon: "bar-chart-2",
+      title: "Ranked Results",
+      desc: "Results ranked by confidence score with top 5 breeds",
+    },
+    {
+      icon: "shield",
+      title: "Vet Verification",
+      desc: "Optional expert verification for extra accuracy",
+    },
+  ];
+
+  // ─── CAPTURE TIPS DATA ────────────────────────────────────────────────────
+  const captureTips = [
+    { icon: "sun", text: "Good natural lighting, avoid harsh shadows" },
+    { icon: "target", text: "Dog centred and clearly visible in frame" },
+    { icon: "image", text: "Front or side angle works best" },
+    { icon: "aperture", text: "Plain or simple backgrounds preferred" },
+    { icon: "dog", text: "Only dog images are accepted by the AI" },
+  ];
 
   return (
-    <View style={styles.container}>
+    <View style={s.root}>
       <AnalysisLoadingModal visible={processing} />
-
       <NotificationModal
         visible={showNotifications}
         onClose={() => setShowNotifications(false)}
@@ -809,824 +816,795 @@ function ScanPage() {
         onNotificationPress={handleNotificationPress}
       />
 
-      {/* USER HEADER - COLORED BACKGROUND */}
-      <View style={styles.userHeader}>
-        <SafeAreaView style={styles.userHeaderSafe}>
-          <View style={styles.userHeaderContent}>
-            {/* Left: Logo + Name */}
-            <View style={styles.userInfoSection}>
+      {/* ── TOP BAR ── */}
+      <View style={s.topBar}>
+        <SafeAreaView style={s.topSafe}>
+          <View style={s.topRow}>
+            {/* User info */}
+            <TouchableOpacity
+              style={s.userBtn}
+              onPress={() => setShowUserMenu(!showUserMenu)}
+              activeOpacity={0.75}
+            >
               {loadingUser ? (
-                <ActivityIndicator size="small" color="#ffffff" />
+                <ActivityIndicator size="small" color={C.white} />
               ) : (
                 <>
-                  <View style={styles.userInfoSection}>
-                    <TouchableOpacity
-                      onPress={() => setShowUserMenu(!showUserMenu)}
-                      activeOpacity={0.7}
-                      style={styles.userTouchable}
-                    >
-                      <View style={styles.logoContainer}>
-                        {user?.avatar ? (
-                          <Image
-                            source={{ uri: user.avatar }}
-                            style={styles.avatar}
-                          />
-                        ) : (
-                          <View style={styles.defaultAvatar}>
-                            <Feather name="user" size={20} color="#60a5fa" />
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.userTextContainer}>
-                        <Text style={styles.greetingText}>Welcome,</Text>
-                        <Text style={styles.userName}>
-                          {getFirstName(user?.name)}
-                        </Text>
-                      </View>
-
-                      <Feather
-                        name={showUserMenu ? "chevron-up" : "chevron-down"}
-                        size={16}
-                        color="#ffffff"
-                      />
-                    </TouchableOpacity>
-
-                    {/* Dropdown Menu */}
-                    {showUserMenu && (
-                      <View style={styles.userDropdown}>
-                        <View style={styles.dropdownUserInfo}>
-                          <Text style={styles.dropdownUserName}>
-                            {user?.name || "User"}
-                          </Text>
-                          <Text style={styles.dropdownUserEmail}>
-                            {user?.email || ""}
-                          </Text>
-                        </View>
-
-                        <View style={styles.dropdownDivider} />
-
-                        <TouchableOpacity
-                          style={styles.dropdownItem}
-                          onPress={handleLogout}
-                        >
-                          <Feather name="log-out" size={18} color="#ef4444" />
-                          <Text style={styles.logoutText}>Logout</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
+                  {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={s.avatar} />
+                  ) : (
+                    <View style={s.avatarDefault}>
+                      <Feather name="user" size={16} color={C.green} />
+                    </View>
+                  )}
+                  <View>
+                    <Text style={s.greeting}>Welcome back</Text>
+                    <Text style={s.userName}>{getFirstName(user?.name)}</Text>
                   </View>
+                  <Feather
+                    name={showUserMenu ? "chevron-up" : "chevron-down"}
+                    size={14}
+                    color="rgba(255,255,255,0.7)"
+                  />
                 </>
               )}
-            </View>
+            </TouchableOpacity>
 
-            {/* Right: Notification Bell + History Button */}
-            <View style={styles.headerButtons}>
+            {/* Dropdown */}
+            {showUserMenu && (
+              <View style={s.dropdown}>
+                <View style={s.ddInfo}>
+                  <Text style={s.ddName}>{user?.name || "User"}</Text>
+                  <Text style={s.ddEmail}>{user?.email || ""}</Text>
+                </View>
+                <View style={s.ddDivider} />
+                <TouchableOpacity style={s.ddItem} onPress={handleLogout}>
+                  <Feather name="log-out" size={15} color={C.red} />
+                  <Text style={s.ddLogout}>Sign out</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Right actions */}
+            <View style={s.topActions}>
               <TouchableOpacity
-                style={styles.notificationButton}
+                style={s.notifBtn}
                 onPress={() => setShowNotifications(true)}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
-                <Feather name="bell" size={20} color="#ffffff" />
+                <Feather name="bell" size={18} color={C.white} />
                 {unreadCount > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationBadgeText}>
+                  <View style={s.badge}>
+                    <Text style={s.badgeText}>
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </Text>
                   </View>
                 )}
               </TouchableOpacity>
-
               <TouchableOpacity
-                style={styles.historyButton}
-                onPress={handleScanHistory}
-                activeOpacity={0.7}
+                style={s.historyBtn}
+                onPress={() => router.push("/scan-history")}
+                activeOpacity={0.75}
               >
-                <Feather name="clock" size={20} color="#ffffff" />
-                <Text style={styles.historyButtonText}>History</Text>
+                <Feather name="clock" size={15} color={C.white} />
+                <Text style={s.historyBtnText}>History</Text>
               </TouchableOpacity>
             </View>
           </View>
         </SafeAreaView>
       </View>
 
-      {/* MAIN CONTENT CONTAINER - ROUNDED TOP */}
-      <View style={styles.mainContentContainer}>
-        {/* Header Text */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Scan Your Pet</Text>
-          <Text style={styles.subtitle}>
-            Upload a photo or use your camera to identify your pet's breed.
-          </Text>
-        </View>
-
-        {/* Scrollable Content */}
-        <View style={styles.content}>
-          {!imageUri ? (
-            <>
-              <View style={styles.uploadCard}>
-                <View style={styles.uploadIconContainer}>
-                  <View style={styles.iconCircle}>
-                    <Feather name="camera" size={40} color="#60a5fa" />
-                  </View>
-                </View>
-                <Text style={styles.uploadText}>Select an image</Text>
+      {/* ── BODY ── */}
+      <View style={s.body}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}
+          >
+            {/* Page title */}
+            <View style={s.pageHead}>
+              <View style={s.statusPill}>
+                <View style={s.statusDot} />
+                <Text style={s.statusLabel}>BREED DETECTION</Text>
               </View>
+              <Text style={s.pageTitle}>Scan Your Dog</Text>
+              <Text style={s.pageSub}>
+                Upload a photo or take one to identify your dog's breed.
+              </Text>
+            </View>
 
-              <View style={styles.actionButtonsContainer}>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleTakePhoto}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="camera" size={18} color="#ffffff" />
-                  <Text style={styles.primaryButtonText}>Take Photo</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handlePickImage}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="image" size={18} color="#ffffff" />
-                  <Text style={styles.primaryButtonText}>Choose Image</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.tipsCard}>
-                <View style={styles.tipsHeader}>
-                  <Feather name="info" size={18} color="#60a5fa" />
-                  <Text style={styles.tipsTitle}>Tips for Best Results</Text>
+            {/* ── SCAN CARD ── */}
+            <View style={s.scanCard}>
+              <View style={s.scanCardBar}>
+                <View style={s.scanCardBarDots}>
+                  {["#ef4444", "#f59e0b", "#22c55e"].map((c, i) => (
+                    <View key={i} style={[s.winDot, { backgroundColor: c }]} />
+                  ))}
                 </View>
-                <View style={styles.tipsList}>
-                  <View style={styles.tipItem}>
-                    <Text style={styles.bullet}>•</Text>
-                    <Text style={styles.tipText}>
-                      Ensure your pet is clearly visible
-                    </Text>
-                  </View>
-                  <View style={styles.tipItem}>
-                    <Text style={styles.bullet}>•</Text>
-                    <Text style={styles.tipText}>Use good lighting</Text>
-                  </View>
-                  <View style={styles.tipItem}>
-                    <Text style={styles.bullet}>•</Text>
-                    <Text style={styles.tipText}>
-                      Center your pet in the frame
-                    </Text>
-                  </View>
-                  <View style={styles.tipItem}>
-                    <Text style={styles.bullet}>•</Text>
-                    <Text style={styles.tipText}>
-                      Better angles improve accuracy
-                    </Text>
-                  </View>
+                <Text style={s.scanCardBarLabel}>doglens://scan</Text>
+                <View style={s.scanCardBarStatus}>
+                  <View
+                    style={[
+                      s.scanStatusDot,
+                      processing && s.scanStatusDotActive,
+                    ]}
+                  />
+                  <Text style={s.scanStatusText}>
+                    {processing ? "PROCESSING" : imageUri ? "READY" : "WAITING"}
+                  </Text>
                 </View>
               </View>
-            </>
-          ) : (
-            <>
-              <View style={styles.previewCard}>
-                <Image source={{ uri: imageUri }} style={styles.previewImage} />
+
+              <View style={s.scanCardBody}>
+                {/* STATE A – No image */}
+                {!imageUri && (
+                  <View style={s.stateA}>
+                    <View style={s.dropZone}>
+                      <View style={s.dropIconWrap}>
+                        <Feather
+                          name="upload-cloud"
+                          size={28}
+                          color={C.green}
+                        />
+                      </View>
+                      <Text style={s.dropTitle}>Drop your dog image here</Text>
+                      <Text style={s.dropSub}>
+                        Supports JPG, PNG, WEBP · Max 10 MB
+                      </Text>
+                    </View>
+
+                    <View style={s.orRow}>
+                      <View style={s.orLine} />
+                      <Text style={s.orText}>or choose an option</Text>
+                      <View style={s.orLine} />
+                    </View>
+
+                    <View style={s.actionRow}>
+                      <TouchableOpacity
+                        style={s.actionBtn}
+                        onPress={handleTakePhoto}
+                        activeOpacity={0.8}
+                      >
+                        <View style={s.actionBtnIcon}>
+                          <Feather name="camera" size={18} color={C.green} />
+                        </View>
+                        <Text style={s.actionBtnText}>Take Photo</Text>
+                        <Text style={s.actionBtnSub}>Use camera</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={s.actionBtn}
+                        onPress={handlePickImage}
+                        activeOpacity={0.8}
+                      >
+                        <View style={s.actionBtnIcon}>
+                          <Feather name="image" size={18} color={C.green} />
+                        </View>
+                        <Text style={s.actionBtnText}>Gallery</Text>
+                        <Text style={s.actionBtnSub}>Browse files</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* STATE B – Image selected */}
+                {imageUri && (
+                  <View style={s.stateB}>
+                    <View style={s.previewWrap}>
+                      <Image
+                        source={{ uri: imageUri }}
+                        style={s.previewImg}
+                        resizeMode="cover"
+                      />
+                      <View style={s.previewOverlay}>
+                        <View style={s.previewBadge}>
+                          <Feather
+                            name="check-circle"
+                            size={10}
+                            color={C.white}
+                          />
+                          <Text style={s.previewBadgeText}>Image Ready</Text>
+                        </View>
+                      </View>
+                      {/* Corner brackets */}
+                      {["tl", "tr", "bl", "br"].map((p) => (
+                        <View
+                          key={p}
+                          style={[
+                            s.corner,
+                            p === "tl"
+                              ? s.cornerTL
+                              : p === "tr"
+                                ? s.cornerTR
+                                : p === "bl"
+                                  ? s.cornerBL
+                                  : s.cornerBR,
+                          ]}
+                        />
+                      ))}
+                    </View>
+
+                    <TouchableOpacity
+                      style={[s.analyzeBtn, processing && s.analyzeBtnDisabled]}
+                      onPress={handleAnalyze}
+                      disabled={processing}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="zap" size={17} color={C.white} />
+                      <Text style={s.analyzeBtnText}>
+                        {processing ? "Analyzing…" : "Analyze Image"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={s.retakeBtn}
+                      onPress={handleReset}
+                      disabled={processing}
+                      activeOpacity={0.75}
+                    >
+                      <Feather name="refresh-cw" size={14} color={C.textSoft} />
+                      <Text style={s.retakeBtnText}>
+                        Choose different photo
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* ── ERROR BANNER ── */}
+            {error && (
+              <View style={s.errorBanner}>
+                <Feather name="alert-circle" size={15} color={C.red} />
+                <Text style={s.errorText}>{error}</Text>
+                <TouchableOpacity
+                  onPress={() => setError(null)}
+                  style={s.errorClose}
+                >
+                  <Feather name="x" size={14} color={C.red} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── HOW IT WORKS ── */}
+            <View style={s.section}>
+              <View style={s.sectionHead}>
+                <View style={s.sectionIconWrap}>
+                  <Feather name="eye" size={13} color={C.green} />
+                </View>
+                <Text style={s.sectionTitle}>HOW IT WORKS</Text>
               </View>
 
-              <View style={styles.previewActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.analyzeButton,
-                    processing && styles.buttonDisabled,
-                  ]}
-                  onPress={handleAnalyze}
-                  disabled={processing}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="zap" size={20} color="#ffffff" />
-                  <Text style={styles.analyzeButtonText}>Analyze Image</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.retakeButton}
-                  onPress={handleReset}
-                  disabled={processing}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="refresh-cw" size={18} color="#9ca3af" />
-                  <Text style={styles.retakeButtonText}>Retake Photo</Text>
-                </TouchableOpacity>
+              <View style={s.stepsCard}>
+                {howItWorks.map((step, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      s.stepItem,
+                      i < howItWorks.length - 1 && s.stepItemBorder,
+                    ]}
+                  >
+                    <View style={s.stepNum}>
+                      <Text style={s.stepNumText}>0{i + 1}</Text>
+                    </View>
+                    <View style={s.stepIconWrap}>
+                      <Feather
+                        name={step.icon as any}
+                        size={15}
+                        color={C.green}
+                      />
+                    </View>
+                    <View style={s.stepText}>
+                      <Text style={s.stepTitle}>{step.title}</Text>
+                      <Text style={s.stepDesc}>{step.desc}</Text>
+                    </View>
+                  </View>
+                ))}
               </View>
-            </>
-          )}
-        </View>
+            </View>
 
-        {error && (
-          <View style={styles.errorBanner}>
-            <Feather name="alert-circle" size={20} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
+            {/* ── CAPTURE TIPS ── */}
+            <View style={[s.section, { marginBottom: 32 }]}>
+              <View style={s.sectionHead}>
+                <View style={s.sectionIconWrap}>
+                  <Feather name="zap" size={13} color={C.green} />
+                </View>
+                <Text style={s.sectionTitle}>CAPTURE TIPS</Text>
+              </View>
+
+              <View style={s.tipsGrid}>
+                {captureTips.map((tip, i) => (
+                  <View key={i} style={s.tipCard}>
+                    <View style={s.tipIconWrap}>
+                      <Feather
+                        name={tip.icon as any}
+                        size={16}
+                        color={C.green}
+                      />
+                    </View>
+                    <Text style={s.tipText}>{tip.text}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
       </View>
     </View>
   );
 }
 
 // ============================================================================
-// LOADING MODAL STYLES
+// STYLES
 // ============================================================================
-const loadingStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  container: {
-    width: "100%",
-    maxWidth: 400,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-  },
-  header: {
-    backgroundColor: "#1e3a8a",
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-  },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#ffffff",
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: "#93c5fd",
-  },
-  content: {
-    padding: 20,
-  },
-  currentStageCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0c4a6e",
-    borderRadius: 16,
-    padding: 16,
-    gap: 16,
-    borderWidth: 1,
-    borderColor: "#1e40af",
-  },
-  stageIconContainer: {
-    position: "relative",
-    width: 48,
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pulseRing: {
-    position: "absolute",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#3b82f6",
-    opacity: 0.2,
-  },
-  pulseRingInner: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#3b82f6",
-    opacity: 0.2,
-  },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.green },
 
-  stageIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#3b82f6",
-    justifyContent: "center",
+  // TOP BAR
+  topBar: { backgroundColor: C.green },
+  topSafe: { paddingTop: Platform.OS === "android" ? 36 : 0 },
+  topRow: {
+    flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#3b82f6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    position: "relative",
   },
-  stageTextContainer: {
-    flex: 1,
+  userBtn: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.35)",
   },
-  stageLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#ffffff",
-    marginBottom: 4,
+  avatarDefault: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.35)",
   },
-  stageInfo: {
+  greeting: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.7)",
+    fontWeight: "500",
+    letterSpacing: 0.2,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.white,
+    letterSpacing: -0.2,
+  },
+  dropdown: {
+    position: "absolute",
+    top: 70,
+    left: 20,
+    backgroundColor: C.white,
+    borderRadius: 16,
+    minWidth: 210,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 12,
+    zIndex: 99,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  ddInfo: { padding: 16 },
+  ddName: { fontSize: 14, fontWeight: "700", color: C.text, marginBottom: 3 },
+  ddEmail: { fontSize: 12, color: C.textSoft },
+  ddDivider: { height: 1, backgroundColor: C.borderLight },
+  ddItem: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14 },
+  ddLogout: { fontSize: 14, fontWeight: "600", color: C.red },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  notifBtn: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    backgroundColor: C.red,
+    borderRadius: 8,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: C.green,
+  },
+  badgeText: { fontSize: 10, fontWeight: "800", color: C.white },
+  historyBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
   },
-  stepText: {
-    fontSize: 12,
-    color: "#9ca3af",
-  },
-  dotSeparator: {
-    fontSize: 12,
-    color: "#60a5fa",
-  },
-  percentText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#60a5fa",
-  },
-  progressSection: {
-    marginTop: 20,
-  },
-  progressBar: {
-    height: 10,
-    backgroundColor: "#374151",
-    borderRadius: 5,
+  historyBtnText: { fontSize: 13, fontWeight: "600", color: C.white },
+
+  // BODY
+  body: {
+    flex: 1,
+    backgroundColor: C.offWhite,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -10,
     overflow: "hidden",
   },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#3b82f6",
-    borderRadius: 5,
-  },
-  stepsList: {
-    marginTop: 20,
-    backgroundColor: "#111827",
-    borderRadius: 12,
-    padding: 16,
+  scroll: { paddingHorizontal: 18, paddingTop: 24, paddingBottom: 24 },
+
+  // PAGE HEAD
+  pageHead: { marginBottom: 20 },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: C.greenPale,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#1f2937",
+    borderColor: C.greenMid,
   },
-  stepsTitle: {
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  statusLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.green,
+    letterSpacing: 0.8,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: C.text,
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  pageSub: { fontSize: 13, color: C.textSoft, lineHeight: 19 },
+
+  // SCAN CARD
+  scanCard: {
+    backgroundColor: C.white,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    marginBottom: 14,
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  scanCardBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: C.offWhite,
+    borderBottomWidth: 1,
+    borderBottomColor: C.borderLight,
+  },
+  scanCardBarDots: { flexDirection: "row", gap: 5, marginRight: 10 },
+  winDot: { width: 8, height: 8, borderRadius: 4 },
+  scanCardBarLabel: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: "600",
+    color: C.textFaint,
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  scanCardBarStatus: { flexDirection: "row", alignItems: "center", gap: 5 },
+  scanStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.textFaint,
+  },
+  scanStatusDotActive: { backgroundColor: C.green },
+  scanStatusText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: C.textFaint,
+    letterSpacing: 0.6,
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  scanCardBody: { padding: 16 },
+
+  // STATE A – no image
+  stateA: { gap: 14 },
+  dropZone: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: C.greenMid,
+    borderStyle: "dashed",
+    backgroundColor: C.greenDim,
+    gap: 10,
+  },
+  dropIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.greenMid,
+  },
+  dropTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.text,
+    letterSpacing: -0.2,
+  },
+  dropSub: { fontSize: 11, color: C.textSoft },
+  orRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  orLine: { flex: 1, height: 1, backgroundColor: C.border },
+  orText: { fontSize: 11, color: C.textFaint, fontWeight: "500" },
+  actionRow: { flexDirection: "row", gap: 10 },
+  actionBtn: {
+    flex: 1,
+    alignItems: "center",
+    backgroundColor: C.offWhite,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    gap: 6,
+  },
+  actionBtnIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  actionBtnText: { fontSize: 13, fontWeight: "700", color: C.text },
+  actionBtnSub: { fontSize: 11, color: C.textFaint },
+
+  // STATE B – image selected
+  stateB: { gap: 12 },
+  previewWrap: {
+    borderRadius: 16,
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: C.borderLight,
+  },
+  previewImg: {
+    width: "100%",
+    height: Math.round(width * 0.55),
+    borderRadius: 16,
+  },
+  previewOverlay: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    right: 10,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  previewBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(22,163,74,0.88)",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  previewBadgeText: { fontSize: 10, fontWeight: "700", color: C.white },
+  corner: {
+    position: "absolute",
+    width: 16,
+    height: 16,
+    borderColor: C.green,
+    borderStyle: "solid",
+  },
+  cornerTL: {
+    top: 8,
+    left: 8,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: 4,
+  },
+  cornerTR: {
+    top: 8,
+    right: 8,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: 4,
+  },
+  cornerBL: {
+    bottom: 8,
+    left: 8,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: 4,
+  },
+  cornerBR: {
+    bottom: 8,
+    right: 8,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: 4,
+  },
+  analyzeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.green,
+    paddingVertical: 16,
+    borderRadius: 16,
+    shadowColor: C.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  analyzeBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.white,
+    letterSpacing: -0.2,
+  },
+  analyzeBtnDisabled: { opacity: 0.55 },
+  retakeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.white,
+  },
+  retakeBtnText: { fontSize: 13, fontWeight: "500", color: C.textSoft },
+
+  // ERROR
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: C.redPale,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  errorText: { flex: 1, fontSize: 12, fontWeight: "500", color: C.red },
+  errorClose: { padding: 4 },
+
+  // SECTION
+  section: { marginBottom: 14 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  sectionIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.greenMid,
+  },
+  sectionTitle: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#6b7280",
-    letterSpacing: 0.5,
-    marginBottom: 12,
+    color: C.textMid,
+    letterSpacing: 0.8,
+  },
+
+  // HOW IT WORKS
+  stepsCard: {
+    backgroundColor: C.white,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
   },
   stepItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 10,
-  },
-  stepIndicator: {
-    width: 20,
-    height: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  completedIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#10b981",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  currentIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#3b82f6",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pendingIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#374151",
-  },
-  stepLabel: {
-    fontSize: 14,
-    color: "#6b7280",
-  },
-  stepLabelCompleted: {
-    color: "#10b981",
-    fontWeight: "500",
-  },
-  stepLabelCurrent: {
-    color: "#60a5fa",
-    fontWeight: "600",
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 20,
-    backgroundColor: "#422006",
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#78350f",
+    gap: 12,
   },
-  footerText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#f59e0b",
-  },
-});
-
-// ============================================================================
-// MAIN PAGE STYLES
-// ============================================================================
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#1e3a8a",
-  },
-
-  userHeader: {
-    backgroundColor: "#1e3a8a",
-    paddingBottom: 16,
-    marginTop: 35,
-  },
-  userDropdown: {
-    position: "absolute",
-    top: 65,
-    left: 0,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    zIndex: 2000,
-  },
-  dropdownUserInfo: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a2a",
-  },
-  dropdownUserName: {
-    fontSize: 16,
+  stepItemBorder: { borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  stepNum: { width: 22 },
+  stepNumText: {
+    fontSize: 10,
     fontWeight: "700",
-    color: "#ffffff",
-    marginBottom: 4,
+    color: C.greenLight,
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
   },
-  dropdownUserEmail: {
+  stepIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.greenMid,
+  },
+  stepText: { flex: 1 },
+  stepTitle: {
     fontSize: 13,
-    color: "#9ca3af",
-  },
-  dropdownItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 16,
-  },
-  logoutText: {
-    color: "#ef4444",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  userHeaderSafe: {
-    paddingTop: 8,
-  },
-  userHeaderContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  userInfoSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  logoContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    overflow: "hidden",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  avatar: {
-    width: "100%",
-    height: "100%",
-  },
-  defaultAvatar: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(96, 165, 250, 0.2)",
-  },
-  userTextContainer: {
-    flex: 1,
-  },
-  greetingText: {
-    fontSize: 12,
-    color: "#93c5fd",
-    fontWeight: "500",
-  },
-  userName: {
-    fontSize: 18,
     fontWeight: "700",
-    color: "#ffffff",
-    marginTop: 2,
+    color: C.text,
+    marginBottom: 2,
+    letterSpacing: -0.1,
   },
-  userTouchable: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    maxWidth: "70%",
-  },
-  headerButtons: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  notificationButton: {
-    position: "relative",
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  dropdownDivider: {
-    height: 1,
-    backgroundColor: "#2a2a2a",
-  },
-  notificationBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    backgroundColor: "#ef4444",
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 5,
-    borderWidth: 2,
-    borderColor: "#1e3a8a",
-  },
-  notificationBadgeText: {
-    color: "#ffffff",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  historyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  historyButtonText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  stepDesc: { fontSize: 11, color: C.textSoft, lineHeight: 16 },
 
-  mainContentContainer: {
-    flex: 1,
-    backgroundColor: "#0f0f0f",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden",
-    marginTop: -8,
-  },
-
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 20,
-  },
-  title: {
-    fontSize: 23,
-    fontWeight: "700",
-    color: "#ffffff",
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#9ca3af",
-    lineHeight: 20,
-    marginTop: 6,
-  },
-
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    justifyContent: "space-between",
-  },
-
-  uploadCard: {
-    flex: 1,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: "#2a2a2a",
-    borderStyle: "dashed",
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 200,
-  },
-  uploadIconContainer: {
-    marginBottom: 16,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#1e293b",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  uploadText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#d1d5db",
-  },
-
-  actionButtonsContainer: {
-    flexDirection: "row",
-    gap: 12,
-    marginVertical: 16,
-  },
-  primaryButton: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  tipsCard: {
-    backgroundColor: "#0a1628",
-    borderWidth: 1,
-    borderColor: "#1e3a5f",
-    borderRadius: 16,
-    padding: 18,
-  },
-  tipsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 14,
-  },
-  tipsTitle: {
-    fontWeight: "600",
-    color: "#ffffff",
-    fontSize: 15,
-  },
-  tipsList: {
-    gap: 8,
-  },
-  tipItem: {
+  // CAPTURE TIPS
+  tipsGrid: { gap: 8 },
+  tipCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
+    gap: 12,
+    backgroundColor: C.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  bullet: {
-    fontSize: 16,
-    color: "#60a5fa",
-    lineHeight: 20,
+  tipIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.greenMid,
+    flexShrink: 0,
   },
   tipText: {
     flex: 1,
-    fontSize: 14,
-    color: "#d1d5db",
-    lineHeight: 20,
-  },
-
-  previewCard: {
-    flex: 1,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 12,
-    overflow: "hidden",
-  },
-  previewImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 12,
-  },
-
-  previewActions: {
-    gap: 12,
-    marginTop: 16,
-  },
-  analyzeButton: {
-    flexDirection: "row",
-    backgroundColor: "#3b82f6",
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    shadowColor: "#3b82f6",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  analyzeButtonText: {
-    color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  retakeButton: {
-    flexDirection: "row",
-    backgroundColor: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  retakeButtonText: {
-    color: "#9ca3af",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  errorBanner: {
-    position: "absolute",
-    bottom: 100,
-    left: 24,
-    right: 24,
-    backgroundColor: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#ef4444",
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  errorText: {
-    flex: 1,
-    color: "#ef4444",
-    fontSize: 14,
+    fontSize: 12,
+    color: C.textMid,
+    lineHeight: 18,
+    paddingTop: 7,
     fontWeight: "500",
   },
 });

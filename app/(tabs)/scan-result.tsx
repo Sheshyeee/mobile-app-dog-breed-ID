@@ -1,11 +1,14 @@
 import ApiService from "@/services/api";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import {
   ActivityIndicator,
+  Animated,
   BackHandler,
+  Dimensions,
   Image,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -14,11 +17,34 @@ import {
   View,
 } from "react-native";
 
-type PredictionResult = {
-  breed: string;
-  confidence: number;
+const { width } = Dimensions.get("window");
+
+const C = {
+  green: "#16a34a",
+  greenLight: "#22c55e",
+  greenPale: "#dcfce7",
+  greenMid: "#bbf7d0",
+  greenDim: "#f0fdf4",
+  white: "#ffffff",
+  offWhite: "#f8fafc",
+  border: "#e2e8f0",
+  borderLight: "#f1f5f9",
+  text: "#0f172a",
+  textMid: "#334155",
+  textSoft: "#64748b",
+  textFaint: "#94a3b8",
+  red: "#ef4444",
+  redPale: "#fef2f2",
+  amber: "#f59e0b",
+  violet: "#7c3aed",
+  violetPale: "#ede9fe",
+  pink: "#ec4899",
+  pinkPale: "#fdf2f8",
+  blue: "#3b82f6",
+  bluePale: "#eff6ff",
 };
 
+type PredictionResult = { breed: string; confidence: number };
 type Result = {
   scan_id: string;
   image_url: string;
@@ -31,74 +57,64 @@ type Result = {
 const ScanResults = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-
-  const [result, setResult] = useState<Result | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [result, setResult] = React.useState<Result | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const scanId = params.scan_id;
 
-  // Handle hardware back button
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
+
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        handleBackPress();
-        return true;
-      },
-    );
-
-    return () => backHandler.remove();
+    const bh = BackHandler.addEventListener("hardwareBackPress", () => {
+      router.push("/scan");
+      return true;
+    });
+    return () => bh.remove();
   }, []);
-
-  const handleBackPress = () => {
-    // Navigate to scan page
-    router.push("/scan");
-  };
 
   useEffect(() => {
     const fetchResult = async () => {
-      const scanId = params.scan_id as string;
-
-      if (!scanId) {
+      const id = params.scan_id as string;
+      if (!id) {
         setError("No scan ID provided");
         setLoading(false);
         return;
       }
-
       try {
-        console.log("Fetching result for scan_id:", scanId);
-        const response = await ApiService.getResult(scanId);
-
+        const response = await ApiService.getResult(id);
         if (response.success && response.data) {
-          console.log("Result fetched successfully:", response.data);
           setResult(response.data as Result);
+          Animated.parallel([
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 450,
+              useNativeDriver: true,
+            }),
+            Animated.timing(slideAnim, {
+              toValue: 0,
+              duration: 450,
+              useNativeDriver: true,
+            }),
+          ]).start();
         } else {
           setError(response.message || "Failed to load results");
         }
-      } catch (err: any) {
-        console.error("Error fetching result:", err);
+      } catch {
         setError("Failed to load results. Please try again.");
       } finally {
         setLoading(false);
       }
     };
-
     fetchResult();
   }, [params.scan_id]);
 
-  // FIXED: Better filtering and validation of predictions
   const filteredPredictions = React.useMemo(() => {
     if (!result?.top_predictions) return [];
-
-    return result.top_predictions.filter((prediction) => {
-      // Remove invalid entries
-      if (!prediction || !prediction.breed) return false;
-
-      const breedLower = prediction.breed.toLowerCase().trim();
-
-      // Filter out placeholder/invalid breeds
-      const invalidBreeds = [
+    return result.top_predictions.filter((p) => {
+      if (!p?.breed) return false;
+      const b = p.breed.toLowerCase().trim();
+      const invalid = [
         "other breeds",
         "other breed",
         "alternative 1",
@@ -107,580 +123,626 @@ const ScanResults = () => {
         "alternative",
         "unknown",
       ];
-
-      if (invalidBreeds.includes(breedLower)) return false;
-
-      // Must have positive confidence
-      if (!prediction.confidence || prediction.confidence <= 0) return false;
-
-      // Don't show if it's the same as the primary breed
-      if (result?.breed && breedLower === result.breed.toLowerCase().trim()) {
+      if (invalid.includes(b)) return false;
+      if (!p.confidence || p.confidence <= 0) return false;
+      if (result?.breed && b === result.breed.toLowerCase().trim())
         return false;
-      }
-
       return true;
     });
   }, [result]);
 
-  // Sort by confidence and take top 3
-  const topAlternatives = React.useMemo(() => {
-    return [...filteredPredictions]
-      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
-      .slice(0, 3);
-  }, [filteredPredictions]);
-
-  const ProgressBar = ({ value }: { value: number }) => (
-    <View style={styles.progressContainer}>
-      <View style={[styles.progressBar, { width: `${value}%` }]} />
-    </View>
+  const topAlternatives = React.useMemo(
+    () =>
+      [...filteredPredictions]
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3),
+    [filteredPredictions],
   );
 
-  // Loading State
+  const getConfColor = (c: number) =>
+    c >= 80 ? C.green : c >= 60 ? C.amber : C.red;
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Analyzing your pet...</Text>
-          <Text style={styles.loadingSubtext}>This may take a few seconds</Text>
+      <View style={s.root}>
+        <View style={s.topBar}>
+          <SafeAreaView style={s.topSafe}>
+            <View style={s.topRow}>
+              <Text style={s.topTitle}>Scan Results</Text>
+            </View>
+          </SafeAreaView>
         </View>
-      </SafeAreaView>
+        <View
+          style={[s.body, { alignItems: "center", justifyContent: "center" }]}
+        >
+          <View style={s.loadIconWrap}>
+            <ActivityIndicator size="small" color={C.green} />
+          </View>
+          <Text style={s.loadText}>Analyzing your pet…</Text>
+          <Text style={s.loadSub}>This may take a few seconds</Text>
+        </View>
+      </View>
     );
   }
 
-  // Error State
   if (error || !result) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Feather name="alert-circle" size={64} color="#ef4444" />
-          <Text style={styles.errorTitle}>Oops!</Text>
-          <Text style={styles.errorMessage}>{error || "No results found"}</Text>
+      <View style={s.root}>
+        <View style={s.topBar}>
+          <SafeAreaView style={s.topSafe}>
+            <View style={s.topRow}>
+              <TouchableOpacity
+                onPress={() => router.push("/scan")}
+                style={s.backBtn}
+              >
+                <Feather name="arrow-left" size={18} color={C.white} />
+              </TouchableOpacity>
+              <Text style={s.topTitle}>Scan Results</Text>
+            </View>
+          </SafeAreaView>
+        </View>
+        <View
+          style={[
+            s.body,
+            { alignItems: "center", justifyContent: "center", padding: 24 },
+          ]}
+        >
+          <View style={s.errIconWrap}>
+            <Feather name="alert-circle" size={28} color={C.red} />
+          </View>
+          <Text style={s.errTitle}>Something went wrong</Text>
+          <Text style={s.errMsg}>{error || "No results found"}</Text>
           <TouchableOpacity
-            style={styles.retryButton}
+            style={s.retryBtn}
             onPress={() => router.push("/scan")}
           >
-            <Feather name="refresh-cw" size={20} color="#ffffff" />
-            <Text style={styles.retryButtonText}>Try Again</Text>
+            <Feather name="refresh-cw" size={14} color={C.white} />
+            <Text style={s.retryText}>Try Again</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  // Success State - Display Results
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-            <Feather name="arrow-left" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Scan Results</Text>
-            <Text style={styles.headerSubtitle}>
-              Here's what we found about your pet
-            </Text>
-          </View>
-        </View>
+  const confColor = getConfColor(result.confidence);
 
-        <View style={styles.content}>
-          {/* Primary Result Card */}
-          <View style={styles.primaryCard}>
-            <Image
-              source={{
-                uri: result.image_url || `https://via.placeholder.com/400`,
-              }}
-              style={styles.petImage}
-              resizeMode="cover"
-            />
-            <View style={styles.primaryCardContent}>
-              <View style={styles.badge}>
-                <Feather name="award" size={14} color="#ffffff" />
-                <Text style={styles.badgeText}>Primary Match</Text>
-              </View>
-              <Text style={styles.breedName}>{result.breed}</Text>
-              <Text style={styles.insightDescription}>
-                {result.description}
-              </Text>
-              <View style={styles.confidenceRow}>
-                <Text style={styles.confidenceLabel}>Confidence Score</Text>
-                <Text style={styles.confidenceValue}>
-                  {Math.round(result.confidence)}%
-                </Text>
-              </View>
-              <ProgressBar value={result.confidence} />
-              <Text style={styles.scanId}>Scan ID: {result.scan_id}</Text>
+  return (
+    <View style={s.root}>
+      <View style={s.topBar}>
+        <SafeAreaView style={s.topSafe}>
+          <View style={s.topRow}>
+            <TouchableOpacity
+              onPress={() => router.push("/scan")}
+              style={s.backBtn}
+            >
+              <Feather name="arrow-left" size={18} color={C.white} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={s.topTitle}>Scan Results</Text>
+              <Text style={s.topSub}>Here's what we found</Text>
             </View>
           </View>
+        </SafeAreaView>
+      </View>
 
-          {/* FIXED: Top Breeds Card - Only show if there are valid alternatives */}
-          {topAlternatives.length > 0 && (
-            <View style={styles.topBreedsCard}>
-              <View style={styles.topBreedsHeader}>
-                <Feather name="list" size={20} color="#60a5fa" />
-                <Text style={styles.topBreedsTitle}>Other Possible Breeds</Text>
+      <View style={s.body}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+        >
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}
+          >
+            <View style={s.pageHead}>
+              <View style={s.statusPill}>
+                <View style={s.statusDot} />
+                <Text style={s.statusLabel}>IDENTIFICATION COMPLETE</Text>
               </View>
-              {topAlternatives.map((prediction, index) => (
-                <View
-                  key={`${prediction.breed}-${index}`}
-                  style={styles.predictionCard}
-                >
-                  <View style={styles.rankBadge}>
-                    <Text style={styles.rankText}>{index + 1}</Text>
+              <Text style={s.pageTitle}>Breed Detected</Text>
+            </View>
+
+            <View style={s.primaryCard}>
+              <Image
+                source={{
+                  uri: result.image_url || "https://via.placeholder.com/400",
+                }}
+                style={[s.petImage, { height: width * 0.56 }]}
+                resizeMode="cover"
+              />
+              <View style={s.primaryBody}>
+                <View style={s.primaryTop}>
+                  <View style={s.matchBadge}>
+                    <Feather name="award" size={10} color={C.green} />
+                    <Text style={s.matchBadgeText}>Primary Match</Text>
                   </View>
-                  <View style={styles.predictionContent}>
-                    <Text style={styles.predictionBreed}>
-                      {prediction.breed}
+                  <View
+                    style={[s.confBadge, { backgroundColor: confColor + "20" }]}
+                  >
+                    <Text style={[s.confBadgeText, { color: confColor }]}>
+                      {Math.round(result.confidence)}%
                     </Text>
-                    <View style={styles.predictionRow}>
-                      <View style={styles.predictionProgressContainer}>
+                  </View>
+                </View>
+                <Text style={s.breedName}>{result.breed}</Text>
+                <Text style={s.breedDesc}>{result.description}</Text>
+                <View style={s.confRow}>
+                  <Text style={s.confLabel}>Confidence Score</Text>
+                  <Text style={[s.confValue, { color: confColor }]}>
+                    {Math.round(result.confidence)}%
+                  </Text>
+                </View>
+                <View style={s.barTrack}>
+                  <View
+                    style={[
+                      s.barFill,
+                      {
+                        width: `${result.confidence}%` as any,
+                        backgroundColor: confColor,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={s.scanIdText}>ID: {result.scan_id}</Text>
+              </View>
+            </View>
+
+            {topAlternatives.length > 0 && (
+              <View style={s.altCard}>
+                <View style={s.sectionHead}>
+                  <View style={s.sectionIcon}>
+                    <Feather name="list" size={12} color={C.green} />
+                  </View>
+                  <Text style={s.sectionTitle}>Other Possible Breeds</Text>
+                </View>
+                {topAlternatives.map((p, i) => (
+                  <View key={`${p.breed}-${i}`} style={s.altItem}>
+                    <View style={s.altRank}>
+                      <Text style={s.altRankText}>{i + 1}</Text>
+                    </View>
+                    <View style={s.altContent}>
+                      <View style={s.altTopRow}>
+                        <Text style={s.altBreed}>{p.breed}</Text>
+                        <Text style={s.altConf}>
+                          {Math.round(p.confidence)}%
+                        </Text>
+                      </View>
+                      <View style={s.altBarTrack}>
                         <View
                           style={[
-                            styles.predictionProgressBar,
-                            { width: `${prediction.confidence}%` },
+                            s.altBarFill,
+                            { width: `${p.confidence}%` as any },
                           ]}
                         />
                       </View>
-                      <Text style={styles.predictionConfidence}>
-                        {Math.round(prediction.confidence)}%
-                      </Text>
                     </View>
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+              </View>
+            )}
 
-          {/* FIXED: Show message when only one confident prediction */}
-          {topAlternatives.length === 0 && result.confidence >= 80 && (
-            <View style={styles.highConfidenceCard}>
-              <View style={styles.highConfidenceContent}>
-                <Feather name="check-circle" size={24} color="#10b981" />
-                <View style={styles.highConfidenceTextContainer}>
-                  <Text style={styles.highConfidenceTitle}>
-                    High Confidence Identification
-                  </Text>
-                  <Text style={styles.highConfidenceText}>
-                    Our system is very confident about this breed
-                    identification.
+            {topAlternatives.length === 0 && result.confidence >= 80 && (
+              <View style={s.highConfCard}>
+                <View style={s.highConfIcon}>
+                  <Feather name="check-circle" size={16} color={C.green} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.highConfTitle}>High Confidence Match</Text>
+                  <Text style={s.highConfSub}>
+                    Our system is very confident about this identification.
                   </Text>
                 </View>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Explore More Section */}
-          <Text style={styles.exploreTitle}>Explore More Insights</Text>
+            <View style={s.sectionHead2}>
+              <View style={s.statusPill}>
+                <View style={s.statusDot} />
+                <Text style={s.statusLabel}>EXPLORE INSIGHTS</Text>
+              </View>
+            </View>
 
-          <TouchableOpacity
-            style={styles.insightCard}
-            onPress={() =>
-              router.push({
-                pathname: "/view-simulation",
-                params: { scan_id: scanId },
-              })
-            }
-          >
-            <View style={[styles.iconContainer, styles.violetBg]}>
-              <Feather name="clock" size={32} color="#7c3aed" />
-            </View>
-            <Text style={styles.insightTitle}>Future Appearance</Text>
-            <Text style={styles.insightDescription}>
-              See how your pet will look as they age over the years
-            </Text>
-            <View style={styles.insightButton}>
-              <Text style={styles.insightButtonText}>View Simulation</Text>
-              <Feather name="arrow-right" size={16} color="#ffffff" />
-            </View>
-          </TouchableOpacity>
+            <View style={s.insightsGrid}>
+              <TouchableOpacity
+                style={[s.insightCard, { borderColor: "#fce7f3" }]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/health-risk",
+                    params: { scan_id: scanId },
+                  })
+                }
+                activeOpacity={0.78}
+              >
+                <View style={[s.insightIcon, { backgroundColor: C.pinkPale }]}>
+                  <Feather name="activity" size={18} color={C.pink} />
+                </View>
+                <Text style={s.insightTitle}>Health Risks</Text>
+                <Text style={s.insightDesc}>
+                  Breed-specific health considerations
+                </Text>
+                <View style={[s.insightBtn, { backgroundColor: C.pink }]}>
+                  <Text style={s.insightBtnText}>View Risks</Text>
+                  <Feather name="arrow-right" size={12} color={C.white} />
+                </View>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.insightCard}
-            onPress={() =>
-              router.push({
-                pathname: "/health-risk",
-                params: { scan_id: scanId },
-              })
-            }
-          >
-            <View style={[styles.iconContainer, styles.pinkBg]}>
-              <Feather name="activity" size={32} color="#ec4899" />
-            </View>
-            <Text style={styles.insightTitle}>Health Risk</Text>
-            <Text style={styles.insightDescription}>
-              Learn about breed-specific health considerations
-            </Text>
-            <View style={styles.insightButton}>
-              <Text style={styles.insightButtonText}>View Risk</Text>
-              <Feather name="arrow-right" size={16} color="#ffffff" />
-            </View>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.insightCard, { borderColor: "#dbeafe" }]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/origin",
+                    params: { scan_id: scanId },
+                  })
+                }
+                activeOpacity={0.78}
+              >
+                <View style={[s.insightIcon, { backgroundColor: C.bluePale }]}>
+                  <Feather name="globe" size={18} color={C.blue} />
+                </View>
+                <Text style={s.insightTitle}>Origin History</Text>
+                <Text style={s.insightDesc}>
+                  Discover your pet's breed heritage
+                </Text>
+                <View style={[s.insightBtn, { backgroundColor: C.blue }]}>
+                  <Text style={s.insightBtnText}>Explore</Text>
+                  <Feather name="arrow-right" size={12} color={C.white} />
+                </View>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.insightCard}
-            onPress={() =>
-              router.push({
-                pathname: "/origin",
-                params: { scan_id: scanId },
-              })
-            }
-          >
-            <View style={[styles.iconContainer, styles.blueBg]}>
-              <Feather name="globe" size={32} color="#3b82f6" />
+              <TouchableOpacity
+                style={[s.insightCard, { borderColor: "#e9d5ff" }]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/view-simulation",
+                    params: { scan_id: scanId },
+                  })
+                }
+                activeOpacity={0.78}
+              >
+                <View
+                  style={[s.insightIcon, { backgroundColor: C.violetPale }]}
+                >
+                  <Feather name="clock" size={18} color={C.violet} />
+                </View>
+                <Text style={s.insightTitle}>Future Appearance</Text>
+                <Text style={s.insightDesc}>
+                  See how your pet will look as they age
+                </Text>
+                <View style={[s.insightBtn, { backgroundColor: C.violet }]}>
+                  <Text style={s.insightBtnText}>Simulate</Text>
+                  <Feather name="arrow-right" size={12} color={C.white} />
+                </View>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.insightTitle}>Origin History</Text>
-            <Text style={styles.insightDescription}>
-              Discover the history and origin of your pet's breed
-            </Text>
-            <View style={styles.insightButton}>
-              <Text style={styles.insightButtonText}>Explore History</Text>
-              <Feather name="arrow-right" size={16} color="#ffffff" />
-            </View>
-          </TouchableOpacity>
 
-          {/* New Scan Button */}
-          <TouchableOpacity
-            style={styles.newScanButton}
-            onPress={() => router.push("/scan")}
-          >
-            <Feather name="camera" size={20} color="#ffffff" />
-            <Text style={styles.newScanButtonText}>Scan Another Pet</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            <TouchableOpacity
+              style={s.newScanBtn}
+              onPress={() => router.push("/scan")}
+              activeOpacity={0.85}
+            >
+              <Feather name="camera" size={15} color={C.white} />
+              <Text style={s.newScanText}>Scan Another Pet</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </ScrollView>
+      </View>
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0f0f0f",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  loadingSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  errorTitle: {
-    marginTop: 16,
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  errorMessage: {
-    marginTop: 8,
-    fontSize: 16,
-    color: "#9ca3af",
-    textAlign: "center",
-  },
-  retryButton: {
-    marginTop: 24,
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.green },
+  topBar: { backgroundColor: C.green },
+  topSafe: { paddingTop: Platform.OS === "android" ? 36 : 0 },
+  topRow: {
     flexDirection: "row",
-    backgroundColor: "#3b82f6",
+    alignItems: "center",
+    paddingHorizontal: 20,
     paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
+    gap: 12,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
   },
-  retryButtonText: {
-    color: "#ffffff",
+  topTitle: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
+    color: C.white,
+    letterSpacing: -0.2,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 16,
-    paddingTop: 40,
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerTextContainer: {
+  topSub: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 1 },
+  body: {
     flex: 1,
+    backgroundColor: C.offWhite,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -10,
+    overflow: "hidden",
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#9ca3af",
-    marginTop: 4,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  primaryCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 16,
-    marginBottom: 16,
-  },
-  petImage: {
-    width: "100%",
-    height: 250,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  primaryCardContent: {
-    gap: 10,
-  },
-  badge: {
+  scroll: { paddingBottom: 40 },
+  pageHead: { paddingHorizontal: 18, paddingTop: 22, paddingBottom: 4 },
+  statusPill: {
     flexDirection: "row",
-    backgroundColor: "#3b82f6",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    alignSelf: "flex-start",
     alignItems: "center",
     gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: C.greenPale,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.greenMid,
   },
-  badgeText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "600",
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  statusLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: C.green,
+    letterSpacing: 0.8,
   },
-  breedName: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#ffffff",
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: C.text,
+    letterSpacing: -0.5,
+    marginBottom: 14,
   },
-  confidenceRow: {
+  primaryCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.white,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  petImage: { width: "100%", backgroundColor: C.borderLight },
+  primaryBody: { padding: 16, gap: 8 },
+  primaryTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  confidenceLabel: {
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  confidenceValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#60a5fa",
-  },
-  progressContainer: {
-    width: "100%",
-    height: 10,
-    backgroundColor: "#2a2a2a",
-    borderRadius: 5,
-    overflow: "hidden",
-  },
-  progressBar: {
-    height: "100%",
-    backgroundColor: "#3b82f6",
-    borderRadius: 5,
-  },
-  scanId: {
-    fontSize: 12,
-    color: "#6b7280",
-    fontStyle: "italic",
-  },
-  topBreedsCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 20,
-    marginBottom: 16,
-    gap: 12,
-  },
-  topBreedsHeader: {
+  matchBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  topBreedsTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  predictionCard: {
-    backgroundColor: "#0f0f0f",
-    borderRadius: 12,
+    gap: 5,
+    backgroundColor: C.greenPale,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: C.greenMid,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  matchBadgeText: { fontSize: 10, fontWeight: "700", color: C.green },
+  confBadge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20 },
+  confBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  breedName: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: C.text,
+    letterSpacing: -0.5,
+  },
+  breedDesc: { fontSize: 13, color: C.textSoft, lineHeight: 19 },
+  confRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  confLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: C.textFaint,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  confValue: {
+    fontSize: 12,
+    fontWeight: "800",
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  barTrack: {
+    height: 5,
+    backgroundColor: C.borderLight,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  barFill: { height: "100%", borderRadius: 3 },
+  scanIdText: { fontSize: 10, color: C.textFaint, fontStyle: "italic" },
+  altCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    marginBottom: 12,
+    gap: 12,
+  },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sectionIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: C.greenPale,
+    borderWidth: 1,
+    borderColor: C.greenMid,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTitle: { fontSize: 13, fontWeight: "700", color: C.text },
+  altItem: { flexDirection: "row", alignItems: "center", gap: 12 },
+  altRank: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: C.greenPale,
+    borderWidth: 1,
+    borderColor: C.greenMid,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  altRankText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: C.green,
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  altContent: { flex: 1, gap: 5 },
+  altTopRow: { flexDirection: "row", justifyContent: "space-between" },
+  altBreed: { fontSize: 13, fontWeight: "600", color: C.text },
+  altConf: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.green,
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
+  },
+  altBarTrack: {
+    height: 4,
+    backgroundColor: C.borderLight,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  altBarFill: {
+    height: "100%",
+    backgroundColor: C.greenLight,
+    borderRadius: 2,
+  },
+  highConfCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.greenDim,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.greenMid,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
+    marginBottom: 12,
   },
-  rankBadge: {
+  highConfIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  highConfTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.text,
+    marginBottom: 2,
+  },
+  highConfSub: { fontSize: 11, color: C.textSoft, lineHeight: 16 },
+  sectionHead2: { paddingHorizontal: 18, marginBottom: 12, marginTop: 4 },
+  insightsGrid: { paddingHorizontal: 18, gap: 10, marginBottom: 16 },
+  insightCard: {
+    backgroundColor: C.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  insightIcon: {
     width: 40,
     height: 40,
-    borderRadius: 10,
-    backgroundColor: "#1a1a1a",
-    borderWidth: 1,
-    borderColor: "#60a5fa",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  rankText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#60a5fa",
-  },
-  predictionContent: {
-    flex: 1,
-    gap: 6,
-  },
-  predictionBreed: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  predictionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  predictionProgressContainer: {
-    flex: 1,
-    height: 6,
-    backgroundColor: "#2a2a2a",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  predictionProgressBar: {
-    height: "100%",
-    backgroundColor: "#60a5fa",
-    borderRadius: 3,
-  },
-  predictionConfidence: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#d1d5db",
-    width: 45,
-    textAlign: "right",
-  },
-  highConfidenceCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 20,
-    marginBottom: 16,
-  },
-  highConfidenceContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  highConfidenceTextContainer: {
-    flex: 1,
-    gap: 4,
-  },
-  highConfidenceTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  highConfidenceText: {
-    fontSize: 14,
-    color: "#9ca3af",
-    lineHeight: 20,
-  },
-  exploreTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#ffffff",
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  insightCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 20,
-    marginBottom: 16,
-    gap: 12,
-  },
-  iconContainer: {
-    width: 64,
-    height: 64,
     borderRadius: 12,
-    justifyContent: "center",
     alignItems: "center",
-  },
-  violetBg: {
-    backgroundColor: "#1e1b4b",
-  },
-  pinkBg: {
-    backgroundColor: "#500724",
-  },
-  blueBg: {
-    backgroundColor: "#1e3a8a",
+    justifyContent: "center",
   },
   insightTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.text,
+    letterSpacing: -0.2,
   },
-  insightDescription: {
-    fontSize: 14,
-    color: "#9ca3af",
-    lineHeight: 20,
+  insightDesc: { fontSize: 12, color: C.textSoft, lineHeight: 17 },
+  insightBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 2,
   },
-  insightButton: {
+  insightBtnText: { fontSize: 12, fontWeight: "700", color: C.white },
+  newScanBtn: {
+    marginHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 12,
-    backgroundColor: "#2a2a2a",
-    borderRadius: 10,
-    marginTop: 4,
+    backgroundColor: C.green,
+    paddingVertical: 15,
+    borderRadius: 14,
   },
-  insightButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  newScanButton: {
-    flexDirection: "row",
-    backgroundColor: "#3b82f6",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+  newScanText: { fontSize: 14, fontWeight: "700", color: C.white },
+  loadIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: C.greenPale,
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    marginTop: 8,
+    borderWidth: 1,
+    borderColor: C.greenMid,
+    marginBottom: 12,
   },
-  newScanButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
+  loadText: { fontSize: 15, fontWeight: "600", color: C.text, marginBottom: 4 },
+  loadSub: { fontSize: 12, color: C.textSoft },
+  errIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
   },
+  errTitle: { fontSize: 18, fontWeight: "700", color: C.text, marginBottom: 6 },
+  errMsg: {
+    fontSize: 13,
+    color: C.textSoft,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.green,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  retryText: { fontSize: 14, fontWeight: "600", color: C.white },
 });
 
 export default ScanResults;

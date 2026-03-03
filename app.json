@@ -16,9 +16,9 @@
       "package": "com.doglens.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/Foreground.png",
-        "backgroundImage": "./assets/images/Background.png",
-        "monochromeImage": "./assets/images/Monochrome.png"
+        "foregroundImage": "./assets/images/main.png",
+        "backgroundImage": "./assets/images/main.png",
+        "monochromeImage": "./assets/images/main.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -32,12 +32,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/loading.png",
+          "image": "./assets/images/main.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#B7BDF7",
+          "backgroundColor": "#F7F5F0",
           "dark": {
-            "backgroundColor": "#B7BDF7"
+            "backgroundColor": "#F7F5F0"
           }
         }
       ],

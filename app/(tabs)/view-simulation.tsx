@@ -1,12 +1,15 @@
 import ApiService from "@/services/api";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
+  Dimensions,
   Image,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -14,6 +17,33 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+const { width } = Dimensions.get("window");
+
+const C = {
+  green: "#16a34a",
+  greenLight: "#22c55e",
+  greenPale: "#dcfce7",
+  greenMid: "#bbf7d0",
+  greenDim: "#f0fdf4",
+  white: "#ffffff",
+  offWhite: "#f8fafc",
+  border: "#e2e8f0",
+  borderLight: "#f1f5f9",
+  text: "#0f172a",
+  textMid: "#334155",
+  textSoft: "#64748b",
+  textFaint: "#94a3b8",
+  red: "#ef4444",
+  redPale: "#fef2f2",
+  violet: "#7c3aed",
+  violetPale: "#ede9fe",
+  violetMid: "#c4b5fd",
+  amber: "#f59e0b",
+  amberPale: "#fffbeb",
+  amberMid: "#fde68a",
+  blue: "#3b82f6",
+};
 
 const ViewSimulation = () => {
   const router = useRouter();
@@ -36,499 +66,656 @@ const ViewSimulation = () => {
   >("pending");
   const [isPolling, setIsPolling] = useState(false);
 
-  // Handle hardware back button
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        handleBack();
-        return true;
-      },
-    );
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
+  const tabAnim = useRef(new Animated.Value(0)).current;
 
-    return () => backHandler.remove();
+  useEffect(() => {
+    const bh = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleBack();
+      return true;
+    });
+    return () => bh.remove();
   }, [scanId]);
 
-  const handleBack = () => {
-    // Navigate back to scan-result page
-    router.push({
-      pathname: "/scan-result",
-      params: { scan_id: scanId },
-    });
-  };
+  const handleBack = () =>
+    router.push({ pathname: "/scan-result", params: { scan_id: scanId } });
 
-  // Fetch initial simulation data
   useEffect(() => {
     const fetchSimulationData = async () => {
       try {
-        console.log("🔥 Fetching simulation data for:", scanId);
         const response = await ApiService.getSimulation(scanId);
-
         if (response.success && response.data) {
-          console.log("✅ Simulation data received:", response.data);
           setBreed(response.data.breed);
           setOriginalImage(response.data.original_image);
           setSimulations(response.data.simulations);
           setStatus(response.data.status);
-
-          // Start polling if not complete
           if (
             response.data.status !== "complete" &&
             response.data.status !== "failed"
           ) {
             setIsPolling(true);
           }
+          Animated.parallel([
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 450,
+              useNativeDriver: true,
+            }),
+            Animated.timing(slideAnim, {
+              toValue: 0,
+              duration: 450,
+              useNativeDriver: true,
+            }),
+          ]).start();
         } else {
           Alert.alert(
             "Error",
             response.message || "Failed to load simulation data",
           );
         }
-      } catch (error) {
-        console.error("❌ Error fetching simulation:", error);
+      } catch {
         Alert.alert("Error", "Failed to load simulation data");
       } finally {
         setLoading(false);
       }
     };
-
-    if (scanId) {
-      fetchSimulationData();
-    }
+    if (scanId) fetchSimulationData();
   }, [scanId]);
 
-  // Poll for simulation updates
   useEffect(() => {
     if (!isPolling) return;
-
-    console.log("🔄 Starting simulation polling...");
-
     const pollInterval = setInterval(async () => {
       try {
-        console.log("📡 Polling simulation status...");
         const response = await ApiService.getSimulationStatus(scanId);
-
         if (response.success && response.data) {
-          console.log(
-            "📊 Status:",
-            response.data.status,
-            "Has 1yr:",
-            response.data.has_1_year,
-            "Has 3yr:",
-            response.data.has_3_years,
-          );
-
           setStatus(response.data.status);
           setSimulations(response.data.simulations);
-
-          // Stop polling if complete or failed
           if (
             response.data.status === "complete" ||
             response.data.status === "failed"
           ) {
-            console.log("✅ Simulation complete, stopping poll");
             setIsPolling(false);
           }
         }
-      } catch (error) {
-        console.error("❌ Polling error:", error);
+      } catch {
+        /* silent */
       }
-    }, 3000); // Poll every 3 seconds
-
-    return () => {
-      console.log("🛑 Stopping polling");
-      clearInterval(pollInterval);
-    };
+    }, 3000);
+    return () => clearInterval(pollInterval);
   }, [isPolling, scanId]);
 
-  const tabs = [
-    { id: "1" as const, label: "In 1 Year" },
-    { id: "3" as const, label: "In 3 Years" },
-  ];
-
-  const getImageSource = (imageUrl: string | null) => {
-    if (!imageUrl) {
-      return; // Use a placeholder
-    }
-    return { uri: imageUrl };
+  const switchTab = (tab: "1" | "3") => {
+    setActiveTab(tab);
+    Animated.timing(tabAnim, {
+      toValue: tab === "1" ? 0 : 1,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
   };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Loading simulation data...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   const hasSimulations = simulations["1_years"] || simulations["3_years"];
   const isGenerating = status === "pending" || status === "generating";
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-            <Feather name="arrow-left" size={24} color="#1b1b18" />
-          </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Future Appearance Simulation</Text>
-            <Text style={styles.headerSubtitle}>
-              See how your {breed || "dog"} will look as they age
-            </Text>
-          </View>
+  if (loading) {
+    return (
+      <View style={s.root}>
+        <View style={s.topBar}>
+          <SafeAreaView style={s.topSafe}>
+            <View style={s.topRow}>
+              <Text style={s.topTitle}>Future Appearance</Text>
+            </View>
+          </SafeAreaView>
         </View>
-
-        <View style={styles.content}>
-          {/* Note Card */}
-          <View style={styles.noteCard}>
-            <Text style={styles.noteText}>
-              <Text style={styles.noteBold}>Note: </Text>
-              <Text style={styles.noteDescription}>
-                This prediction shows your dog 1 and 3 years from today based on
-                current age and breed patterns. Actual aging may vary depending
-                on genetics, health, and environment.
-              </Text>
-            </Text>
+        <View
+          style={[s.body, { alignItems: "center", justifyContent: "center" }]}
+        >
+          <View style={s.loadIconWrap}>
+            <ActivityIndicator size="small" color={C.green} />
           </View>
+          <Text style={s.loadText}>Loading simulation…</Text>
+        </View>
+      </View>
+    );
+  }
 
-          {/* Loading State */}
-          {isGenerating && !hasSimulations && (
-            <View style={styles.generatingCard}>
-              <ActivityIndicator size="large" color="#3b82f6" />
-              <Text style={styles.generatingTitle}>
-                {status === "pending"
-                  ? "Analyzing current age and features..."
-                  : "Generating future appearance predictions..."}
-              </Text>
-              <Text style={styles.generatingSubtitle}>
-                Creating personalized age progression images. This takes 20-40
-                seconds.
-              </Text>
+  const currentSim =
+    activeTab === "1" ? simulations["1_years"] : simulations["3_years"];
+
+  return (
+    <View style={s.root}>
+      <View style={s.topBar}>
+        <SafeAreaView style={s.topSafe}>
+          <View style={s.topRow}>
+            <TouchableOpacity onPress={handleBack} style={s.backBtn}>
+              <Feather name="arrow-left" size={18} color={C.white} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={s.topTitle}>Future Appearance</Text>
+              <Text style={s.topSub}>Age progression simulation</Text>
             </View>
-          )}
+          </View>
+        </SafeAreaView>
+      </View>
 
-          {/* Failed State */}
-          {status === "failed" && !hasSimulations && (
-            <View style={styles.failedCard}>
-              <Feather name="alert-circle" size={48} color="#ef4444" />
-              <Text style={styles.failedTitle}>
-                Simulation generation failed
-              </Text>
-              <Text style={styles.failedSubtitle}>
-                We couldn't generate the age simulations. Please try again
-                later.
-              </Text>
-              <TouchableOpacity style={styles.retryButton} onPress={handleBack}>
-                <Text style={styles.retryButtonText}>Back to Results</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Simulation Tabs */}
-          {hasSimulations && (
-            <View style={styles.tabsContainer}>
-              {/* Generating Banner */}
-              {isGenerating && (
-                <View style={styles.generatingBanner}>
-                  <ActivityIndicator size="small" color="#2563eb" />
-                  <Text style={styles.generatingBannerText}>
-                    Still generating remaining images...
-                  </Text>
-                </View>
-              )}
-
-              {/* Tab List */}
-              <View style={styles.tabsList}>
-                {tabs.map((tab) => (
-                  <TouchableOpacity
-                    key={tab.id}
-                    style={[
-                      styles.tab,
-                      activeTab === tab.id && styles.tabActive,
-                    ]}
-                    onPress={() => setActiveTab(tab.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        activeTab === tab.id && styles.tabTextActive,
-                      ]}
-                    >
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+      <View style={s.body}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+        >
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}
+          >
+            <View style={s.pageHead}>
+              <View style={s.statusPill}>
+                <View style={s.statusDot} />
+                <Text style={s.statusLabel}>AGE SIMULATION</Text>
               </View>
+              <Text style={s.pageTitle}>{breed || "Your Dog"}</Text>
+            </View>
 
-              {/* Tab Content */}
-              <View style={styles.tabContent}>
-                <View style={styles.comparisonContainer}>
-                  {/* Current Appearance */}
-                  <View style={styles.imageSection}>
-                    <Text style={styles.sectionTitle}>Current Appearance</Text>
-                    <View style={styles.imageWrapper}>
-                      <Image
-                        source={getImageSource(originalImage)}
-                        style={styles.dogImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <Text style={styles.imageCaption}>
-                      How your dog looks today
+            {/* NOTE CARD */}
+            <View style={s.noteCard}>
+              <Feather
+                name="info"
+                size={13}
+                color={C.amber}
+                style={{ marginTop: 1, flexShrink: 0 }}
+              />
+              <Text style={s.noteText}>
+                Predictions are based on current age, breed patterns, and
+                genetic markers. Actual aging varies by genetics and
+                environment.
+              </Text>
+            </View>
+
+            {/* GENERATING STATE */}
+            {isGenerating && !hasSimulations && (
+              <View style={s.generatingCard}>
+                <View style={s.genIconWrap}>
+                  <ActivityIndicator size="large" color={C.violet} />
+                </View>
+                <Text style={s.genTitle}>
+                  {status === "pending"
+                    ? "Analyzing features…"
+                    : "Generating predictions…"}
+                </Text>
+                <Text style={s.genSub}>
+                  Creating age progression images. This takes 20–40 seconds.
+                </Text>
+                <View style={s.genDots}>
+                  {[0, 1, 2].map((i) => (
+                    <View
+                      key={i}
+                      style={[s.genDot, { opacity: 0.3 + i * 0.35 }]}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* FAILED STATE */}
+            {status === "failed" && !hasSimulations && (
+              <View style={s.failedCard}>
+                <View style={s.failedIcon}>
+                  <Feather name="alert-circle" size={24} color={C.red} />
+                </View>
+                <Text style={s.failedTitle}>Generation Failed</Text>
+                <Text style={s.failedSub}>
+                  We couldn't generate the simulations. Please try again later.
+                </Text>
+                <TouchableOpacity style={s.backBtnPrimary} onPress={handleBack}>
+                  <Text style={s.backBtnText}>Back to Results</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* TABS + SIMULATION */}
+            {hasSimulations && (
+              <>
+                {isGenerating && (
+                  <View style={s.genBanner}>
+                    <ActivityIndicator size="small" color={C.violet} />
+                    <Text style={s.genBannerText}>
+                      Generating remaining images…
                     </Text>
                   </View>
+                )}
 
-                  {/* Future Appearance */}
-                  <View style={styles.imageSection}>
-                    <Text style={styles.sectionTitle}>
-                      {activeTab === "1" ? "In 1 Year" : "In 3 Years"}
-                    </Text>
-                    <View style={styles.imageWrapper}>
-                      {activeTab === "1" && simulations["1_years"] ? (
-                        <Image
-                          source={getImageSource(simulations["1_years"])}
-                          style={styles.dogImage}
-                          resizeMode="contain"
+                {/* TAB SELECTOR */}
+                <View style={s.tabsWrap}>
+                  {(
+                    [
+                      { id: "1", label: "In 1 Year", icon: "clock" },
+                      { id: "3", label: "In 3 Years", icon: "calendar" },
+                    ] as const
+                  ).map((tab) => (
+                    <TouchableOpacity
+                      key={tab.id}
+                      style={[s.tab, activeTab === tab.id && s.tabActive]}
+                      onPress={() => switchTab(tab.id)}
+                      activeOpacity={0.75}
+                    >
+                      <Feather
+                        name={tab.icon}
+                        size={13}
+                        color={activeTab === tab.id ? C.violet : C.textFaint}
+                      />
+                      <Text
+                        style={[
+                          s.tabText,
+                          activeTab === tab.id && s.tabTextActive,
+                        ]}
+                      >
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* SIDE-BY-SIDE COMPARISON */}
+                <View style={s.comparisonCard}>
+                  <View style={s.compRow}>
+                    {/* CURRENT */}
+                    <View style={s.imgSection}>
+                      <View style={s.imgLabelRow}>
+                        <View
+                          style={[s.imgLabelDot, { backgroundColor: C.green }]}
                         />
-                      ) : activeTab === "3" && simulations["3_years"] ? (
+                        <Text style={s.imgLabel}>Today</Text>
+                      </View>
+                      <View style={s.imgWrap}>
                         <Image
-                          source={getImageSource(simulations["3_years"])}
-                          style={styles.dogImage}
-                          resizeMode="contain"
+                          source={
+                            originalImage ? { uri: originalImage } : undefined
+                          }
+                          style={s.dogImg}
+                          resizeMode="cover"
                         />
-                      ) : (
-                        <View style={styles.placeholderContainer}>
-                          <ActivityIndicator size="large" color="#9ca3af" />
-                          <Text style={styles.placeholderText}>
-                            Generating...
+                      </View>
+                      <Text style={s.imgCaption}>Current appearance</Text>
+                    </View>
+
+                    {/* DIVIDER */}
+                    <View style={s.compDivider}>
+                      <View style={s.compArrow}>
+                        <Feather
+                          name="arrow-right"
+                          size={14}
+                          color={C.violet}
+                        />
+                      </View>
+                    </View>
+
+                    {/* FUTURE */}
+                    <View style={s.imgSection}>
+                      <View style={s.imgLabelRow}>
+                        <View
+                          style={[s.imgLabelDot, { backgroundColor: C.violet }]}
+                        />
+                        <Text style={s.imgLabel}>
+                          {activeTab === "1" ? "+1 Year" : "+3 Years"}
+                        </Text>
+                      </View>
+                      <View style={s.imgWrap}>
+                        {currentSim ? (
+                          <Image
+                            source={{ uri: currentSim }}
+                            style={s.dogImg}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[s.dogImg, s.imgPlaceholder]}>
+                            <ActivityIndicator size="small" color={C.violet} />
+                            <Text style={s.imgPlaceholderText}>
+                              Generating…
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={s.imgCaption}>
+                        {activeTab === "1" ? "One" : "Three"} year
+                        {activeTab === "3" ? "s" : ""} from today
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* STATUS BAR */}
+                <View style={s.simStatusCard}>
+                  <View style={s.simStatusRow}>
+                    {[
+                      { label: "1-Year Sim", ready: !!simulations["1_years"] },
+                      { label: "3-Year Sim", ready: !!simulations["3_years"] },
+                    ].map((item) => (
+                      <View key={item.label} style={s.simStatusItem}>
+                        <View
+                          style={[
+                            s.simStatusIcon,
+                            {
+                              backgroundColor: item.ready
+                                ? C.greenPale
+                                : C.amberPale,
+                              borderColor: item.ready ? C.greenMid : C.amberMid,
+                            },
+                          ]}
+                        >
+                          <Feather
+                            name={item.ready ? "check" : "clock"}
+                            size={12}
+                            color={item.ready ? C.green : C.amber}
+                          />
+                        </View>
+                        <View>
+                          <Text style={s.simStatusLabel}>{item.label}</Text>
+                          <Text
+                            style={[
+                              s.simStatusValue,
+                              { color: item.ready ? C.green : C.amber },
+                            ]}
+                          >
+                            {item.ready ? "Ready" : "Pending"}
                           </Text>
                         </View>
-                      )}
-                    </View>
-                    <Text style={styles.imageCaption}>
-                      How your dog will look{" "}
-                      {activeTab === "1" ? "one" : "three"} year
-                      {activeTab === "3" ? "s" : ""} from today
-                    </Text>
+                      </View>
+                    ))}
                   </View>
                 </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+              </>
+            )}
+          </Animated.View>
+        </ScrollView>
+      </View>
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FDFDFC",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 32,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: "#6b7280",
-  },
-  header: {
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.green },
+  topBar: { backgroundColor: C.green },
+  topSafe: { paddingTop: Platform.OS === "android" ? 36 : 0 },
+  topRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 16,
-    paddingTop: 40,
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1b1b18",
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#6b7280",
-    marginTop: 4,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  noteCard: {
-    backgroundColor: "#fff7ed",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#fed7aa",
-    padding: 16,
-    marginBottom: 16,
-  },
-  noteText: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  noteBold: {
-    fontWeight: "bold",
-    color: "#9a3412",
-  },
-  noteDescription: {
-    color: "#c2410c",
-  },
-  generatingCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    padding: 32,
     alignItems: "center",
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 12,
   },
-  generatingTitle: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topTitle: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#1f2937",
-    textAlign: "center",
+    fontWeight: "700",
+    color: C.white,
+    letterSpacing: -0.2,
   },
-  generatingSubtitle: {
-    fontSize: 14,
-    color: "#6b7280",
-    textAlign: "center",
+  topSub: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 1 },
+  body: {
+    flex: 1,
+    backgroundColor: C.offWhite,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -10,
+    overflow: "hidden",
   },
-  failedCard: {
-    backgroundColor: "#fef2f2",
+  scroll: { paddingBottom: 40 },
+  pageHead: { paddingHorizontal: 18, paddingTop: 22, paddingBottom: 4 },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: C.greenPale,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.greenMid,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  statusLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: C.green,
+    letterSpacing: 0.8,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: C.text,
+    letterSpacing: -0.5,
+    marginBottom: 14,
+  },
+
+  noteCard: {
+    marginHorizontal: 18,
+    marginBottom: 12,
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: C.amberPale,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.amberMid,
+    padding: 12,
+    alignItems: "flex-start",
+  },
+  noteText: { flex: 1, fontSize: 12, color: "#92400e", lineHeight: 18 },
+
+  generatingCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 28,
+    alignItems: "center",
+    gap: 12,
+  },
+  genIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: C.violetPale,
+    borderWidth: 1,
+    borderColor: C.violetMid,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  genTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.text,
+    textAlign: "center",
+  },
+  genSub: {
+    fontSize: 12,
+    color: C.textSoft,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  genDots: { flexDirection: "row", gap: 6 },
+  genDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.violet },
+
+  failedCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.redPale,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#fecaca",
-    padding: 32,
+    padding: 28,
     alignItems: "center",
-    gap: 16,
+    gap: 10,
   },
-  failedTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#991b1b",
-    textAlign: "center",
+  failedIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#fee2e2",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  failedSubtitle: {
-    fontSize: 14,
+  failedTitle: { fontSize: 15, fontWeight: "700", color: "#991b1b" },
+  failedSub: {
+    fontSize: 12,
     color: "#dc2626",
     textAlign: "center",
+    lineHeight: 18,
   },
-  retryButton: {
-    backgroundColor: "#3b82f6",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 8,
+  backBtnPrimary: {
+    backgroundColor: C.green,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 4,
   },
-  retryButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  generatingBanner: {
+  backBtnText: { fontSize: 13, fontWeight: "700", color: C.white },
+
+  genBanner: {
+    marginHorizontal: 18,
+    marginBottom: 12,
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#eff6ff",
-    borderRadius: 8,
-    padding: 12,
     gap: 8,
-    marginBottom: 16,
+    alignItems: "center",
+    backgroundColor: C.violetPale,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.violetMid,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
-  generatingBannerText: {
-    fontSize: 14,
-    color: "#1e40af",
-  },
-  tabsContainer: {
-    gap: 16,
-  },
-  tabsList: {
+  genBannerText: { fontSize: 12, color: C.violet, fontWeight: "500" },
+
+  tabsWrap: {
+    marginHorizontal: 18,
+    marginBottom: 12,
     flexDirection: "row",
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
+    backgroundColor: C.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
     padding: 4,
     gap: 4,
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  tabActive: {
-    backgroundColor: "#ffffff",
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#6b7280",
-  },
-  tabTextActive: {
-    color: "#1b1b18",
-  },
-  tabContent: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
+  tabActive: { backgroundColor: C.violetPale },
+  tabText: { fontSize: 13, fontWeight: "600", color: C.textFaint },
+  tabTextActive: { color: C.violet },
+
+  comparisonCard: {
+    marginHorizontal: 18,
+    marginBottom: 12,
+    backgroundColor: C.white,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: C.border,
     padding: 16,
   },
-  comparisonContainer: {
-    gap: 24,
-  },
-  imageSection: {
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1b1b18",
-  },
-  imageWrapper: {
-    borderRadius: 12,
+  compRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  imgSection: { flex: 1, gap: 8 },
+  imgLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  imgLabelDot: { width: 6, height: 6, borderRadius: 3 },
+  imgLabel: { fontSize: 11, fontWeight: "700", color: C.textMid },
+  imgWrap: {
+    borderRadius: 10,
     overflow: "hidden",
-    backgroundColor: "#f3f4f6",
+    backgroundColor: C.borderLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  dogImg: {
+    width: "100%",
+    aspectRatio: 1,
+  },
+  imgPlaceholder: {
+    alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    backgroundColor: C.borderLight,
+  },
+  imgPlaceholderText: { fontSize: 11, color: C.textFaint },
+  imgCaption: { fontSize: 10, color: C.textFaint, textAlign: "center" },
+  compDivider: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 30,
+  },
+  compArrow: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.violetPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.violetMid,
+  },
+
+  simStatusCard: {
+    marginHorizontal: 18,
+    backgroundColor: C.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+  },
+  simStatusRow: { flexDirection: "row", gap: 12 },
+  simStatusItem: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
     alignItems: "center",
   },
-  dogImage: {
-    width: "100%",
-    height: undefined,
-    aspectRatio: 1,
-    borderRadius: 12,
-  },
-  placeholderContainer: {
-    width: "100%",
-    height: undefined,
-    aspectRatio: 1,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 12,
-    justifyContent: "center",
+  simStatusIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
     alignItems: "center",
-    gap: 8,
+    justifyContent: "center",
+    borderWidth: 1,
   },
-  placeholderText: {
-    fontSize: 14,
-    color: "#6b7280",
+  simStatusLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.text,
+    marginBottom: 1,
   },
-  imageCaption: {
-    fontSize: 14,
-    color: "#4b5563",
+  simStatusValue: {
+    fontSize: 10,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
   },
+
+  loadIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: C.greenPale,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.greenMid,
+    marginBottom: 12,
+  },
+  loadText: { fontSize: 15, fontWeight: "600", color: C.text },
 });
 
 export default ViewSimulation;
