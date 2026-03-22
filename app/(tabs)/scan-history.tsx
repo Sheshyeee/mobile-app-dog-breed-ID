@@ -1,4 +1,7 @@
 import ApiService from "@/services/api";
+import appointmentService, {
+  Appointment,
+} from "../../services/appointmentService";
 import authService, { User } from "@/services/authService";
 import notificationService, {
   Notification,
@@ -611,7 +614,7 @@ export default function ScanHistoryPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── server-side aggregate stats (full dataset, not just loaded records) ──
+  // ── server-side aggregate stats ──
   const [serverStats, setServerStats] = useState<ServerStats>({
     total: 0,
     verified_count: 0,
@@ -630,8 +633,13 @@ export default function ScanHistoryPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // ── pending appointments ──
+  const [pendingAppts, setPendingAppts] = useState<Appointment[]>([]);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unreadRef = useRef(0);
 
   // ── back handler ──
   useEffect(() => {
@@ -650,39 +658,53 @@ export default function ScanHistoryPage() {
     return () => bh.remove();
   }, [showNotifications, showUserMenu]);
 
-  // ── initial load — runs once on mount ──
   useEffect(() => {
     initUser();
   }, []);
 
-  // ── focus effect — silently refreshes data every time this screen is focused
-  //    (e.g. user navigates back from scan screen after uploading a new scan) ──
   useFocusEffect(
     useCallback(() => {
       silentRefresh();
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          const r = await notificationService.getUnreadCount();
+          if (r.success && typeof r.count === "number") {
+            if (r.count !== unreadRef.current) {
+              unreadRef.current = r.count;
+              setUnreadCount(r.count);
+              await fetchNotifications();
+              await fetchPendingAppts();
+            }
+          }
+        } catch {
+          /* silent */
+        }
+      }, 30000);
+
+      return () => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+      };
     }, []),
   );
 
-  // Loads the user profile once. Does not touch scan data.
   const initUser = async () => {
     try {
       const u = await authService.getCurrentUser();
       setUser(u);
     } catch {
-      // non-fatal
+      /* non-fatal */
     }
   };
 
-  // Full silent refresh: resets to page 1 and reloads everything.
-  // Shows a loading state only on the very first load (when allScans is empty).
   const silentRefresh = async () => {
     const isFirstLoad = allScans.length === 0;
     if (isFirstLoad) setLoading(true);
-
     try {
       await loadPage(1, true);
       await fetchNotifications();
       await fetchUnreadCount();
+      await fetchPendingAppts();
     } catch {
       setError("Failed to load data.");
     } finally {
@@ -704,16 +726,30 @@ export default function ScanHistoryPage() {
     }
   };
 
-  // ── load a single page of results ──
+  const fetchPendingAppts = async () => {
+    try {
+      const r = await appointmentService.getAppointments();
+      if (r.success && r.appointments) {
+        setPendingAppts(
+          r.appointments.filter(
+            (a: Appointment) =>
+              (a.initiated_by ?? "clinic") === "clinic" &&
+              a.status === "pending",
+          ),
+        );
+      }
+    } catch {
+      /* silent */
+    }
+  };
+
   const loadPage = async (pageNum: number, reset = false) => {
     try {
       setError(null);
       const r = await ApiService.getRecentResults(pageNum, PER_PAGE);
-
       if (r.success && r.data) {
         const newScans: ScanHistoryItem[] = r.data;
         setAllScans((prev) => (reset ? newScans : [...prev, ...newScans]));
-
         if (r.pagination) {
           setHasMore(r.pagination.has_more);
           setTotal(r.pagination.total);
@@ -723,21 +759,15 @@ export default function ScanHistoryPage() {
           setTotal(newScans.length);
           setPage(pageNum);
         }
-
-        // Update server-side stats on every page-1 fetch so stats stay fresh
-        // after a new scan is uploaded or an existing one is deleted.
-        if (r.stats && pageNum === 1) {
-          setServerStats(r.stats);
-        }
+        if (r.stats && pageNum === 1) setServerStats(r.stats);
       } else {
         setError(r.message || "Failed to load history");
       }
-    } catch (e: any) {
+    } catch {
       setError("Failed to load data. Please try again.");
     }
   };
 
-  // ── infinite scroll trigger ──
   const handleLoadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
@@ -748,7 +778,6 @@ export default function ScanHistoryPage() {
     }
   }, [loadingMore, hasMore, page]);
 
-  // ── pull-to-refresh ──
   const handleRefresh = async () => {
     setRefreshing(true);
     setPage(1);
@@ -757,7 +786,6 @@ export default function ScanHistoryPage() {
     setRefreshing(false);
   };
 
-  // ── notifications ──
   const fetchNotifications = async () => {
     try {
       const r = await notificationService.getNotifications();
@@ -766,14 +794,19 @@ export default function ScanHistoryPage() {
       /* silent */
     }
   };
+
   const fetchUnreadCount = async () => {
     try {
       const r = await notificationService.getUnreadCount();
-      if (r.success && typeof r.count === "number") setUnreadCount(r.count);
+      if (r.success && typeof r.count === "number") {
+        unreadRef.current = r.count;
+        setUnreadCount(r.count);
+      }
     } catch {
       /* silent */
     }
   };
+
   const handleMarkAsRead = async (id: number) => {
     const r = await notificationService.markAsRead(id);
     if (r.success) {
@@ -787,6 +820,7 @@ export default function ScanHistoryPage() {
       setUnreadCount((p) => Math.max(0, p - 1));
     }
   };
+
   const handleMarkAllAsRead = async () => {
     const r = await notificationService.markAllAsRead();
     if (r.success) {
@@ -796,6 +830,7 @@ export default function ScanHistoryPage() {
       setUnreadCount(0);
     }
   };
+
   const handleDeleteNotification = async (id: number) => {
     const r = await notificationService.deleteNotification(id);
     if (r.success) {
@@ -803,13 +838,24 @@ export default function ScanHistoryPage() {
       await fetchUnreadCount();
     }
   };
+
+  const APPT_TYPES = [
+    "appointment_scheduled",
+    "appointment_accepted",
+    "appointment_rejected",
+  ];
+
   const handleNotificationPress = async (n: Notification) => {
     if (!n.read) await handleMarkAsRead(n.id);
-    if (n.data?.scan_id) {
-      setShowNotifications(false);
+    setShowNotifications(false);
+    // ✅ FIX: cast n.data as any to safely access appointment_id without TS error
+    const data = n.data as any;
+    if (APPT_TYPES.includes(n.type) || data?.appointment_id) {
+      router.push("/appointments" as any);
+    } else if (data?.scan_id) {
       router.push({
         pathname: "/scan-result",
-        params: { scan_id: n.data.scan_id },
+        params: { scan_id: data.scan_id },
       });
     }
   };
@@ -824,11 +870,9 @@ export default function ScanHistoryPage() {
           try {
             const r = await ApiService.deleteScan(scanId);
             if (r.success) {
-              // Optimistically remove from local list
               const deleted = allScans.find((s) => s.id === scanId);
               setAllScans((p) => p.filter((s) => s.id !== scanId));
               setTotal((p) => Math.max(0, p - 1));
-              // Keep server stats in sync
               if (deleted) {
                 const wasVerified = deleted.status === "verified";
                 setServerStats((prev) => ({
@@ -863,12 +907,10 @@ export default function ScanHistoryPage() {
 
   const getFirstName = (n?: string) => (n ? n.split(" ")[0] : "User");
 
-  // ── stats — always from server so they match the web ──
   const verifiedCount = serverStats.verified_count;
   const pendingCount = serverStats.pending_count;
   const avgConf = Math.round(serverStats.avg_confidence);
 
-  // ── client-side filter + search on ALL loaded records ──
   const filtered = allScans.filter((s) => {
     const q = search.trim().toLowerCase();
     const matchSearch = q === "" || s.breed.toLowerCase().includes(q);
@@ -879,17 +921,14 @@ export default function ScanHistoryPage() {
     return matchSearch && matchFilter;
   });
 
-  // Build 2-column rows for FlatList
   const rows: ScanHistoryItem[][] = [];
   for (let i = 0; i < filtered.length; i += 2)
     rows.push(filtered.slice(i, i + 2));
 
-  // ── list header ──
   const ListHeader = () => (
     <Animated.View
       style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
     >
-      {/* Stats 2×2 grid — values from server, always reflects full dataset */}
       <View style={p.statsSection}>
         <View style={p.statsRow}>
           <StatCard
@@ -935,7 +974,6 @@ export default function ScanHistoryPage() {
         </View>
       </View>
 
-      {/* Progress bar — shows how many records have been loaded */}
       {serverStats.total > allScans.length && (
         <View style={p.progressWrap}>
           <View style={p.progressBarTrack}>
@@ -957,7 +995,6 @@ export default function ScanHistoryPage() {
         </View>
       )}
 
-      {/* Vet banner */}
       <View style={p.vetBanner}>
         <View style={p.vetIconWrap}>
           <Feather name="shield" size={14} color={C.green} />
@@ -971,7 +1008,6 @@ export default function ScanHistoryPage() {
         </View>
       </View>
 
-      {/* Search */}
       <View style={p.searchWrap}>
         <Feather
           name="search"
@@ -1000,7 +1036,6 @@ export default function ScanHistoryPage() {
         )}
       </View>
 
-      {/* Filter pills */}
       <View style={p.filterRow}>
         {(["all", "verified", "pending"] as FilterType[]).map((f) => {
           const cnt =
@@ -1033,7 +1068,6 @@ export default function ScanHistoryPage() {
         })}
       </View>
 
-      {/* Result count + clear */}
       {(filtered.length > 0 || search || filter !== "all") && (
         <View style={p.resultRow}>
           <Text style={p.resultText}>
@@ -1060,7 +1094,6 @@ export default function ScanHistoryPage() {
     </Animated.View>
   );
 
-  // ── loading skeleton ──
   if (loading) {
     return (
       <View style={p.root}>
@@ -1170,26 +1203,8 @@ export default function ScanHistoryPage() {
               />
             </TouchableOpacity>
 
-            {/* Dropdown */}
-            {showUserMenu && (
-              <View style={p.dropdown}>
-                <View style={p.ddInfo}>
-                  <Text style={p.ddName}>{user?.name || "User"}</Text>
-                  <Text style={p.ddEmail}>{user?.email || ""}</Text>
-                </View>
-                <View style={p.ddDiv} />
-                <TouchableOpacity style={p.ddItem} onPress={handleLogout}>
-                  <Feather name="log-out" size={15} color={C.red} />
-                  <Text
-                    style={{ fontSize: 14, fontWeight: "600", color: C.red }}
-                  >
-                    Sign out
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             <View style={p.topActions}>
+              {/* Notification bell */}
               <TouchableOpacity
                 style={p.notifBtn}
                 onPress={() => setShowNotifications(true)}
@@ -1204,6 +1219,22 @@ export default function ScanHistoryPage() {
                   </View>
                 )}
               </TouchableOpacity>
+
+              {/* Appointments button */}
+              <TouchableOpacity
+                style={[p.apptBtn, pendingAppts.length > 0 && p.apptBtnAlert]}
+                onPress={() => router.push("/appointments" as any)}
+                activeOpacity={0.75}
+              >
+                <Feather name="calendar" size={15} color={C.white} />
+                {pendingAppts.length > 0 && (
+                  <View style={p.badge}>
+                    <Text style={p.badgeT}>{pendingAppts.length}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* New Scan */}
               <TouchableOpacity
                 style={p.newBtn}
                 onPress={() => router.push("/scan")}
@@ -1214,6 +1245,23 @@ export default function ScanHistoryPage() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* ── DROPDOWN — outside topRow so it never blocks sibling buttons ── */}
+          {showUserMenu && (
+            <View style={p.dropdown}>
+              <View style={p.ddInfo}>
+                <Text style={p.ddName}>{user?.name || "User"}</Text>
+                <Text style={p.ddEmail}>{user?.email || ""}</Text>
+              </View>
+              <View style={p.ddDiv} />
+              <TouchableOpacity style={p.ddItem} onPress={handleLogout}>
+                <Feather name="log-out" size={15} color={C.red} />
+                <Text style={{ fontSize: 14, fontWeight: "600", color: C.red }}>
+                  Sign out
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </SafeAreaView>
       </View>
 
@@ -1367,7 +1415,6 @@ const p = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 14,
-    position: "relative",
   },
   userBtn: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   avatar: {
@@ -1396,7 +1443,7 @@ const p = StyleSheet.create({
   },
   dropdown: {
     position: "absolute",
-    top: 70,
+    top: Platform.OS === "android" ? 100 : 64,
     left: 20,
     backgroundColor: C.white,
     borderRadius: 16,
@@ -1440,6 +1487,16 @@ const p = StyleSheet.create({
     borderColor: C.green,
   },
   badgeT: { fontSize: 10, fontWeight: "800", color: C.white },
+  apptBtn: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  apptBtnAlert: { backgroundColor: "rgba(245,158,11,0.28)" },
   newBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1450,7 +1507,6 @@ const p = StyleSheet.create({
     borderRadius: 12,
   },
   newBtnT: { fontSize: 13, fontWeight: "600", color: C.white },
-
   body: {
     flex: 1,
     backgroundColor: C.offWhite,
@@ -1488,7 +1544,6 @@ const p = StyleSheet.create({
     marginBottom: 4,
   },
   pageSub: { fontSize: 13, color: C.textSoft, lineHeight: 19 },
-
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1502,10 +1557,8 @@ const p = StyleSheet.create({
     borderColor: "#fecaca",
   },
   errorText: { flex: 1, fontSize: 12, color: C.red, fontWeight: "500" },
-
   statsSection: { paddingHorizontal: 18, marginBottom: 10 },
   statsRow: { flexDirection: "row" },
-
   progressWrap: { marginHorizontal: 18, marginBottom: 12 },
   progressBarTrack: {
     height: 5,
@@ -1520,7 +1573,6 @@ const p = StyleSheet.create({
     borderRadius: 3,
   },
   progressText: { fontSize: 10, color: C.textFaint, textAlign: "center" },
-
   vetBanner: {
     marginHorizontal: 18,
     marginBottom: 12,
@@ -1546,7 +1598,6 @@ const p = StyleSheet.create({
   },
   vetTitle: { fontSize: 12, fontWeight: "700", color: C.text, marginBottom: 3 },
   vetDesc: { fontSize: 11, color: C.textSoft, lineHeight: 16 },
-
   searchWrap: {
     marginHorizontal: 18,
     marginBottom: 10,
@@ -1560,7 +1611,6 @@ const p = StyleSheet.create({
     height: 44,
   },
   searchInput: { flex: 1, fontSize: 13, color: C.text, paddingVertical: 0 },
-
   filterRow: {
     flexDirection: "row",
     gap: 8,
@@ -1583,7 +1633,6 @@ const p = StyleSheet.create({
   pillTextActive: { color: C.green },
   pillCount: { fontSize: 10, fontWeight: "500", color: C.textFaint },
   pillCountActive: { color: C.green },
-
   resultRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1602,7 +1651,6 @@ const p = StyleSheet.create({
     backgroundColor: C.borderLight,
   },
   clearText: { fontSize: 11, color: C.textSoft, fontWeight: "500" },
-
   listContent: { paddingBottom: 40 },
   row: {
     flexDirection: "row",
@@ -1610,7 +1658,6 @@ const p = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 10,
   },
-
   moreWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -1640,7 +1687,6 @@ const p = StyleSheet.create({
     color: C.textFaint,
     paddingVertical: 16,
   },
-
   emptyWrap: {
     alignItems: "center",
     paddingVertical: 48,

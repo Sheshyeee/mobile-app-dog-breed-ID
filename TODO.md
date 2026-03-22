@@ -1,0 +1,1 @@
+# History Button Fix Complete\n\n- Icon reverted to 'clock' (Feather does not have 'history' icon, TS error fixed).\n- Navigation to scan-history.tsx confirmed correct: router.push("/scan-history").\n\nTask complete.

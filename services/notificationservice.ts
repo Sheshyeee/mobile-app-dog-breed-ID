@@ -1,7 +1,7 @@
 import axios from "axios";
 import authService from "./authService";
 
-const API_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud/api/v1";
+const API_BASE_URL = "https://petbreed-id-main-7penqx.free.laravel.cloud/api/v1";
 
 const api = axios.create({
   baseURL: API_BASE_URL,

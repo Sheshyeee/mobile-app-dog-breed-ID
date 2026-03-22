@@ -2,9 +2,8 @@ import axios from "axios";
 import { Platform } from "react-native";
 import authService from "./authService";
 
-const API_BASE_URL = "https://petbreed-id-main-vkbmhz.laravel.cloud/api/v1";
+const API_BASE_URL = "https://petbreed-id-main-7penqx.free.laravel.cloud/api/v1";
 
-// Axios instance for GET requests (Dashboard, History)
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -14,7 +13,6 @@ const api = axios.create({
   timeout: 60000,
 });
 
-// Add auth token to all requests
 api.interceptors.request.use(async (config) => {
   const token = await authService.getToken();
   if (token) {
@@ -56,7 +54,43 @@ export interface ResultResponse {
   message?: string;
 }
 
-// Simulation response interface
+// ── Physical / age data types ─────────────────────────────────────────────────
+export interface VisualFeature {
+  label: string;
+  value: string;
+}
+
+export interface HealthNote {
+  issue: string;
+  note: string;
+}
+
+export interface WeightHeight {
+  male?: string;
+  female?: string;
+}
+
+export interface AgeProfile {
+  weight?: WeightHeight | string;
+  height?: WeightHeight | string;
+  visual_features?: VisualFeature[] | string[];
+  health_notes?: HealthNote[];
+}
+
+export interface AgeProfiles {
+  "1_year"?: AgeProfile;
+  "3_years"?: AgeProfile;
+}
+
+export interface CurrentHealth {
+  weight?: WeightHeight | string;
+  height?: WeightHeight | string;
+  visual_features?: VisualFeature[] | string[];
+  health_notes?: HealthNote[];
+  lifespan?: string;
+}
+
+// ── Simulation interfaces ─────────────────────────────────────────────────────
 export interface SimulationResponse {
   success: boolean;
   data?: {
@@ -67,11 +101,12 @@ export interface SimulationResponse {
       "3_years": string | null;
     };
     status: "pending" | "generating" | "complete" | "failed";
+    age_profiles?: AgeProfiles | null;
+    current_health?: CurrentHealth | null;
   };
   message?: string;
 }
 
-// Simulation status response interface
 export interface SimulationStatusResponse {
   success: boolean;
   data?: {
@@ -82,17 +117,16 @@ export interface SimulationStatusResponse {
     };
     has_1_year: boolean;
     has_3_years: boolean;
+    age_profiles?: AgeProfiles | null;
   };
   message?: string;
 }
 
-// Delete scan response interface
 export interface DeleteScanResponse {
   success: boolean;
   message?: string;
 }
 
-// Scan history item
 export interface ScanHistoryItem {
   id: number;
   scan_id: string;
@@ -103,7 +137,6 @@ export interface ScanHistoryItem {
   status?: "pending" | "verified";
 }
 
-// Server-side aggregate stats (computed across ALL records, not just loaded page)
 export interface ScanStats {
   total: number;
   verified_count: number;
@@ -111,7 +144,6 @@ export interface ScanStats {
   avg_confidence: number;
 }
 
-// Pagination metadata
 export interface PaginationMeta {
   total: number;
   per_page: number;
@@ -120,7 +152,6 @@ export interface PaginationMeta {
   has_more: boolean;
 }
 
-// Paginated results response
 export interface RecentResultsResponse {
   success: boolean;
   data?: ScanHistoryItem[];
@@ -130,14 +161,8 @@ export interface RecentResultsResponse {
 }
 
 class ApiService {
-  /**
-   * Analyze pet image
-   */
   async analyzeImage(imageUri: string): Promise<AnalysisResponse> {
     try {
-      console.log("🔄 Starting image upload...");
-
-      // Get auth token
       const token = await authService.getToken();
       if (!token) {
         return {
@@ -146,7 +171,6 @@ class ApiService {
         };
       }
 
-      // 1. Android URI Fix: Ensure it starts with file://
       let cleanUri = imageUri;
       if (
         Platform.OS === "android" &&
@@ -156,18 +180,13 @@ class ApiService {
         cleanUri = `file://${cleanUri}`;
       }
 
-      console.log("📁 Clean URI:", cleanUri);
-
-      // 2. Get Filename & Type
       const filename = cleanUri.split("/").pop() || "photo.jpg";
       const match = /\.(\w+)$/.exec(filename.toLowerCase());
       const ext = match ? match[1] : "jpg";
-
       let mimeType = "image/jpeg";
       if (ext === "png") mimeType = "image/png";
       if (ext === "webp") mimeType = "image/webp";
 
-      // 3. Create FormData
       const formData = new FormData();
       formData.append("image", {
         uri: cleanUri,
@@ -175,9 +194,6 @@ class ApiService {
         type: mimeType,
       } as any);
 
-      console.log(`📤 Uploading to ${API_BASE_URL}/analyze`);
-
-      // 4. Use Fetch (Better for file uploads in React Native)
       const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: {
@@ -189,20 +205,15 @@ class ApiService {
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        console.error("🔴 Server Error:", data);
         return {
           success: false,
           message: data.message || "Upload failed",
           errors: data.errors,
         };
       }
-
-      console.log("✅ Success:", data);
       return data;
     } catch (error: any) {
-      console.error("❌ Upload Error:", error);
       return {
         success: false,
         message: error.message || "Network request failed",
@@ -210,25 +221,15 @@ class ApiService {
     }
   }
 
-  /**
-   * Get result by scan ID
-   */
   async getResult(scanId: string): Promise<ResultResponse> {
     try {
       const response = await api.get<ResultResponse>(`/results/${scanId}`);
       return response.data;
     } catch (error: any) {
-      console.error("Fetch Result Error:", error);
-      return {
-        success: false,
-        message: "Failed to fetch result",
-      };
+      return { success: false, message: "Failed to fetch result" };
     }
   }
 
-  /**
-   * Get simulation data by scan ID
-   */
   async getSimulation(scanId: string): Promise<SimulationResponse> {
     try {
       const response = await api.get<SimulationResponse>(
@@ -236,17 +237,10 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
-      console.error("Fetch Simulation Error:", error);
-      return {
-        success: false,
-        message: "Failed to fetch simulation data",
-      };
+      return { success: false, message: "Failed to fetch simulation data" };
     }
   }
 
-  /**
-   * Poll simulation status
-   */
   async getSimulationStatus(scanId: string): Promise<SimulationStatusResponse> {
     try {
       const response = await api.get<SimulationStatusResponse>(
@@ -254,17 +248,10 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
-      console.error("Fetch Simulation Status Error:", error);
-      return {
-        success: false,
-        message: "Failed to fetch simulation status",
-      };
+      return { success: false, message: "Failed to fetch simulation status" };
     }
   }
 
-  /**
-   * Get health risk data
-   */
   async getHealthRisk(scanId: string) {
     try {
       const response = await api.get(`/results/${scanId}/health-risk`);
@@ -274,9 +261,6 @@ class ApiService {
     }
   }
 
-  /**
-   * Get origin history data
-   */
   async getOriginHistory(scanId: string) {
     try {
       const response = await api.get(`/results/${scanId}/origin_history`);
@@ -286,12 +270,6 @@ class ApiService {
     }
   }
 
-  /**
-   * Get paginated scan results.
-   * Returns server-side aggregate stats (total, verified, pending, avg confidence)
-   * computed across ALL records — not just the current page — so stat cards
-   * always show the full picture regardless of how many pages have been loaded.
-   */
   async getRecentResults(
     page: number = 1,
     perPage: number = 20,
@@ -302,17 +280,10 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
-      console.error("Fetch Recent Results Error:", error);
-      return {
-        success: false,
-        message: "Failed to fetch scan history",
-      };
+      return { success: false, message: "Failed to fetch scan history" };
     }
   }
 
-  /**
-   * Delete scan by ID
-   */
   async deleteScan(scanId: number): Promise<DeleteScanResponse> {
     try {
       const response = await api.delete<DeleteScanResponse>(
@@ -320,7 +291,6 @@ class ApiService {
       );
       return response.data;
     } catch (error: any) {
-      console.error("Delete Scan Error:", error);
       return {
         success: false,
         message: error.response?.data?.message || "Failed to delete scan",

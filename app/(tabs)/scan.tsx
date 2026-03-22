@@ -1,12 +1,15 @@
 import ApiService from "@/services/api";
+import appointmentService, {
+  Appointment,
+} from "../../services/appointmentService";
 import authService, { User } from "@/services/authService";
 import notificationService, {
   Notification,
 } from "@/services/notificationservice";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,7 +29,6 @@ import {
 
 const { width, height } = Dimensions.get("window");
 
-// ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 const C = {
   green: "#16a34a",
   greenLight: "#22c55e",
@@ -48,7 +50,6 @@ const C = {
   shadow: "rgba(22,163,74,0.12)",
 };
 
-// ─── INTERFACES ─────────────────────────────────────────────────────────────
 interface PredictionResult {
   breed: string;
   confidence: number;
@@ -392,7 +393,6 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
     >
       <View style={ls.overlay}>
         <View style={ls.card}>
-          {/* Header */}
           <View style={ls.cardHeader}>
             <Animated.View
               style={[ls.bigIcon, { transform: [{ scale: pulseAnim }] }]}
@@ -401,13 +401,9 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
             </Animated.View>
             <View>
               <Text style={ls.cardTitle}>Analyzing Your Pet</Text>
-              <Text style={ls.cardSub}>
-                Breed identification in progress
-              </Text>
+              <Text style={ls.cardSub}>Breed identification in progress</Text>
             </View>
           </View>
-
-          {/* Current stage */}
           <View style={ls.stageRow}>
             <Animated.View
               style={[ls.stageIcon, { transform: [{ rotate: spin }] }]}
@@ -422,20 +418,16 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
               </Text>
             </View>
           </View>
-
-          {/* Progress bar */}
           <View style={ls.barTrack}>
             <Animated.View style={[ls.barFill, { width: progressWidth }]} />
           </View>
-
-          {/* Steps list */}
           <View style={ls.stepsList}>
-            {stages.map((s, i) => {
+            {stages.map((st, i) => {
               const done = i < currentStageIndex;
               const curr = i === currentStageIndex;
               return (
                 <View
-                  key={s.id}
+                  key={st.id}
                   style={[ls.stepRow, { opacity: done || curr ? 1 : 0.35 }]}
                 >
                   <View
@@ -463,7 +455,7 @@ const AnalysisLoadingModal: React.FC<{ visible: boolean }> = ({ visible }) => {
                       curr && ls.stepLabelCurr,
                     ]}
                   >
-                    {s.label}
+                    {st.label}
                   </Text>
                 </View>
               );
@@ -576,9 +568,14 @@ function ScanPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingAppointments, setPendingAppointments] = useState<Appointment[]>(
+    [],
+  );
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unreadRef = useRef(0);
 
   useEffect(() => {
     Animated.parallel([
@@ -600,6 +597,7 @@ function ScanPage() {
         setUser(u);
         await fetchNotifications();
         await fetchUnreadCount();
+        await fetchPendingAppointments();
       } catch {
         /* silent */
       } finally {
@@ -609,11 +607,51 @@ function ScanPage() {
     init();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const r = await notificationService.getUnreadCount();
+          if (r.success && typeof r.count === "number") {
+            if (r.count !== unreadRef.current) {
+              unreadRef.current = r.count;
+              setUnreadCount(r.count);
+              await fetchNotifications();
+              await fetchPendingAppointments();
+            }
+          }
+        } catch {
+          /* silent */
+        }
+      }, 30000);
+      return () => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+      };
+    }, []),
+  );
+
+  const fetchPendingAppointments = async () => {
+    try {
+      const r = await appointmentService.getAppointments();
+      if (r.success && r.appointments) {
+        const pending = r.appointments.filter(
+          (a: Appointment) =>
+            (a.initiated_by ?? "clinic") === "clinic" && a.status === "pending",
+        );
+        setPendingAppointments(pending);
+      }
+    } catch {
+      /* silent */
+    }
+  };
+
   const fetchUnreadCount = async () => {
     try {
       const r = await notificationService.getUnreadCount();
-      if (r.success && typeof r.count === "number") setUnreadCount(r.count);
-      else setUnreadCount(0);
+      if (r.success && typeof r.count === "number") {
+        unreadRef.current = r.count;
+        setUnreadCount(r.count);
+      } else setUnreadCount(0);
     } catch {
       setUnreadCount(0);
     }
@@ -628,10 +666,18 @@ function ScanPage() {
     }
   };
 
+  const APPT_TYPES = [
+    "appointment_scheduled",
+    "appointment_accepted",
+    "appointment_rejected",
+  ];
+
   const handleNotificationPress = async (n: Notification) => {
     if (!n.read) await handleMarkAsRead(n.id);
-    if (n.data?.scan_id) {
-      setShowNotifications(false);
+    setShowNotifications(false);
+    if (APPT_TYPES.includes(n.type)) {
+      router.push("/appointments" as any);
+    } else if (n.data?.scan_id) {
       router.push({
         pathname: "/scan-result",
         params: { scan_id: n.data.scan_id },
@@ -769,7 +815,6 @@ function ScanPage() {
     setError(null);
   };
 
-  // ─── HOW IT WORKS DATA ────────────────────────────────────────────────────
   const howItWorks = [
     {
       icon: "upload-cloud",
@@ -793,7 +838,6 @@ function ScanPage() {
     },
   ];
 
-  // ─── CAPTURE TIPS DATA ────────────────────────────────────────────────────
   const captureTips = [
     { icon: "sun", text: "Good natural lighting, avoid harsh shadows" },
     { icon: "target", text: "Dog centred and clearly visible in frame" },
@@ -850,23 +894,9 @@ function ScanPage() {
               )}
             </TouchableOpacity>
 
-            {/* Dropdown */}
-            {showUserMenu && (
-              <View style={s.dropdown}>
-                <View style={s.ddInfo}>
-                  <Text style={s.ddName}>{user?.name || "User"}</Text>
-                  <Text style={s.ddEmail}>{user?.email || ""}</Text>
-                </View>
-                <View style={s.ddDivider} />
-                <TouchableOpacity style={s.ddItem} onPress={handleLogout}>
-                  <Feather name="log-out" size={15} color={C.red} />
-                  <Text style={s.ddLogout}>Sign out</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             {/* Right actions */}
             <View style={s.topActions}>
+              {/* Notification bell */}
               <TouchableOpacity
                 style={s.notifBtn}
                 onPress={() => setShowNotifications(true)}
@@ -881,16 +911,52 @@ function ScanPage() {
                   </View>
                 )}
               </TouchableOpacity>
+
+              {/* Appointments button */}
               <TouchableOpacity
-                style={s.historyBtn}
-                onPress={() => router.push("/scan-history")}
+                style={[
+                  s.topActionBtn,
+                  pendingAppointments.length > 0 && s.topActionBtnAlert,
+                ]}
+                onPress={() => router.push("/appointments" as any)}
                 activeOpacity={0.75}
               >
-                <Feather name="clock" size={15} color={C.white} />
+                <Feather name="calendar" size={15} color={C.white} />
+                {pendingAppointments.length > 0 && (
+                  <View style={s.badge}>
+                    <Text style={s.badgeText}>
+                      {pendingAppointments.length}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* History — navigates to scan-history */}
+              <TouchableOpacity
+                style={s.historyBtn}
+                onPress={() => router.push("/(tabs)/scan-history" as any)}
+                activeOpacity={0.75}
+              >
+                <Feather name="clock" size={14} color={C.white} />
                 <Text style={s.historyBtnText}>History</Text>
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* ── DROPDOWN — moved OUTSIDE topRow so it never blocks sibling touch targets ── */}
+          {showUserMenu && (
+            <View style={s.dropdown}>
+              <View style={s.ddInfo}>
+                <Text style={s.ddName}>{user?.name || "User"}</Text>
+                <Text style={s.ddEmail}>{user?.email || ""}</Text>
+              </View>
+              <View style={s.ddDivider} />
+              <TouchableOpacity style={s.ddItem} onPress={handleLogout}>
+                <Feather name="log-out" size={15} color={C.red} />
+                <Text style={s.ddLogout}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </SafeAreaView>
       </View>
 
@@ -959,13 +1025,11 @@ function ScanPage() {
                         Supports JPG, PNG, WEBP · Max 10 MB
                       </Text>
                     </View>
-
                     <View style={s.orRow}>
                       <View style={s.orLine} />
                       <Text style={s.orText}>or choose an option</Text>
                       <View style={s.orLine} />
                     </View>
-
                     <View style={s.actionRow}>
                       <TouchableOpacity
                         style={s.actionBtn}
@@ -978,7 +1042,6 @@ function ScanPage() {
                         <Text style={s.actionBtnText}>Take Photo</Text>
                         <Text style={s.actionBtnSub}>Use camera</Text>
                       </TouchableOpacity>
-
                       <TouchableOpacity
                         style={s.actionBtn}
                         onPress={handlePickImage}
@@ -1013,7 +1076,6 @@ function ScanPage() {
                           <Text style={s.previewBadgeText}>Image Ready</Text>
                         </View>
                       </View>
-                      {/* Corner brackets */}
                       {["tl", "tr", "bl", "br"].map((p) => (
                         <View
                           key={p}
@@ -1030,7 +1092,6 @@ function ScanPage() {
                         />
                       ))}
                     </View>
-
                     <TouchableOpacity
                       style={[s.analyzeBtn, processing && s.analyzeBtnDisabled]}
                       onPress={handleAnalyze}
@@ -1042,7 +1103,6 @@ function ScanPage() {
                         {processing ? "Analyzing…" : "Analyze Image"}
                       </Text>
                     </TouchableOpacity>
-
                     <TouchableOpacity
                       style={s.retakeBtn}
                       onPress={handleReset}
@@ -1073,6 +1133,35 @@ function ScanPage() {
               </View>
             )}
 
+            {/* ── PENDING APPOINTMENTS BANNER ── */}
+            {pendingAppointments.length > 0 && (
+              <TouchableOpacity
+                style={s.apptBanner}
+                onPress={() => router.push("/appointments" as any)}
+                activeOpacity={0.85}
+              >
+                <View style={s.apptBannerLeft}>
+                  <View style={s.apptBannerIconWrap}>
+                    <View style={s.apptBannerPulse} />
+                    <Feather name="calendar" size={16} color={C.amber} />
+                  </View>
+                  <View style={s.apptBannerText}>
+                    <Text style={s.apptBannerTitle}>
+                      {pendingAppointments.length === 1
+                        ? "1 Appointment Needs Your Response"
+                        : `${pendingAppointments.length} Appointments Need Your Response`}
+                    </Text>
+                    <Text style={s.apptBannerSub}>
+                      {pendingAppointments[0]
+                        ? `Next: ${pendingAppointments[0].appointment_date} · ${pendingAppointments[0].appointment_time}`
+                        : "Tap to view and accept or decline"}
+                    </Text>
+                  </View>
+                </View>
+                <Feather name="chevron-right" size={16} color={C.amber} />
+              </TouchableOpacity>
+            )}
+
             {/* ── HOW IT WORKS ── */}
             <View style={s.section}>
               <View style={s.sectionHead}>
@@ -1081,7 +1170,6 @@ function ScanPage() {
                 </View>
                 <Text style={s.sectionTitle}>HOW IT WORKS</Text>
               </View>
-
               <View style={s.stepsCard}>
                 {howItWorks.map((step, i) => (
                   <View
@@ -1118,7 +1206,6 @@ function ScanPage() {
                 </View>
                 <Text style={s.sectionTitle}>CAPTURE TIPS</Text>
               </View>
-
               <View style={s.tipsGrid}>
                 {captureTips.map((tip, i) => (
                   <View key={i} style={s.tipCard}>
@@ -1147,8 +1234,11 @@ function ScanPage() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.green },
 
-  // TOP BAR
-  topBar: { backgroundColor: C.green },
+  topBar: {
+    backgroundColor: C.green,
+    zIndex: 2,
+    elevation: 2,
+  },
   topSafe: { paddingTop: Platform.OS === "android" ? 36 : 0 },
   topRow: {
     flexDirection: "row",
@@ -1156,7 +1246,6 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 14,
-    position: "relative",
   },
   userBtn: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   avatar: {
@@ -1190,7 +1279,7 @@ const s = StyleSheet.create({
   },
   dropdown: {
     position: "absolute",
-    top: 70,
+    top: Platform.OS === "android" ? 100 : 64,
     left: 20,
     backgroundColor: C.white,
     borderRadius: 16,
@@ -1235,18 +1324,33 @@ const s = StyleSheet.create({
     borderColor: C.green,
   },
   badgeText: { fontSize: 10, fontWeight: "800", color: C.white },
+  topActionBtn: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topActionBtnAlert: { backgroundColor: "rgba(245,158,11,0.28)" },
   historyBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    paddingVertical: 8,
     paddingHorizontal: 14,
+    height: 40,
     borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
-  historyBtnText: { fontSize: 13, fontWeight: "600", color: C.white },
+  historyBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.white,
+    letterSpacing: -0.1,
+  },
 
-  // BODY
   body: {
     flex: 1,
     backgroundColor: C.offWhite,
@@ -1254,10 +1358,10 @@ const s = StyleSheet.create({
     borderTopRightRadius: 28,
     marginTop: -10,
     overflow: "hidden",
+    zIndex: 1,
   },
   scroll: { paddingHorizontal: 18, paddingTop: 24, paddingBottom: 24 },
 
-  // PAGE HEAD
   pageHead: { marginBottom: 20 },
   statusPill: {
     flexDirection: "row",
@@ -1288,7 +1392,6 @@ const s = StyleSheet.create({
   },
   pageSub: { fontSize: 13, color: C.textSoft, lineHeight: 19 },
 
-  // SCAN CARD
   scanCard: {
     backgroundColor: C.white,
     borderRadius: 20,
@@ -1337,7 +1440,6 @@ const s = StyleSheet.create({
   },
   scanCardBody: { padding: 16 },
 
-  // STATE A – no image
   stateA: { gap: 14 },
   dropZone: {
     alignItems: "center",
@@ -1393,7 +1495,6 @@ const s = StyleSheet.create({
   actionBtnText: { fontSize: 13, fontWeight: "700", color: C.text },
   actionBtnSub: { fontSize: 11, color: C.textFaint },
 
-  // STATE B – image selected
   stateB: { gap: 12 },
   previewWrap: {
     borderRadius: 16,
@@ -1493,7 +1594,6 @@ const s = StyleSheet.create({
   },
   retakeBtnText: { fontSize: 13, fontWeight: "500", color: C.textSoft },
 
-  // ERROR
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1508,7 +1608,48 @@ const s = StyleSheet.create({
   errorText: { flex: 1, fontSize: 12, fontWeight: "500", color: C.red },
   errorClose: { padding: 4 },
 
-  // SECTION
+  apptBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: C.amberPale,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+  },
+  apptBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  apptBannerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "rgba(245,158,11,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  apptBannerPulse: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(245,158,11,0.4)",
+  },
+  apptBannerText: { flex: 1 },
+  apptBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#92400e",
+    letterSpacing: -0.1,
+  },
+  apptBannerSub: { fontSize: 11, color: "#b45309", marginTop: 1 },
+
   section: { marginBottom: 14 },
   sectionHead: {
     flexDirection: "row",
@@ -1533,7 +1674,6 @@ const s = StyleSheet.create({
     letterSpacing: 0.8,
   },
 
-  // HOW IT WORKS
   stepsCard: {
     backgroundColor: C.white,
     borderRadius: 18,
@@ -1576,7 +1716,6 @@ const s = StyleSheet.create({
   },
   stepDesc: { fontSize: 11, color: C.textSoft, lineHeight: 16 },
 
-  // CAPTURE TIPS
   tipsGrid: { gap: 8 },
   tipCard: {
     flexDirection: "row",
